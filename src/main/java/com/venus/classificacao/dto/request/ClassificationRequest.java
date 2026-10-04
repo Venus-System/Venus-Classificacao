@@ -4,7 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 
 public record ClassificationRequest(
-        @Schema(description = "Usuário que está analisando o produto. Tem que ser o dono do token.", example = "42")
+        @Schema(description = "Usuário que está analisando o produto. Tem que ser o dono do token, a não ser que o token seja de administrador com papel ADMIN.", example = "42")
         @NotNull
         Long userId,
         @Schema(description = "Versão exata da fórmula do produto.", example = "118")
