@@ -11,6 +11,8 @@ import com.venus.classificacao.entity.scoring.ProductScore;
 import com.venus.classificacao.entity.scoring.ScoringModel;
 import com.venus.classificacao.entity.shared.ProfileTag;
 import com.venus.classificacao.entity.user.User;
+import com.venus.classificacao.exception.DataAccessFailureTranslator;
+import com.venus.classificacao.exception.DataIntegrityViolationTranslator;
 import com.venus.classificacao.repository.scan.AnalysisResultRepository;
 import com.venus.classificacao.repository.scan.PersonalizedScoreRepository;
 import com.venus.classificacao.repository.scan.RuleEvaluationRepository;
@@ -20,10 +22,18 @@ import com.venus.classificacao.service.question.MatchedRule;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ClassificationRecorder {
+
+    private static final Logger log = LoggerFactory.getLogger(ClassificationRecorder.class);
 
     private final EntityManager entityManager;
     private final AnalysisResultRepository analysisResultRepository;
@@ -48,16 +58,28 @@ public class ClassificationRecorder {
         ProductVersion version = entityManager.getReference(ProductVersion.class, result.productVersionId());
         ScoringModel model = entityManager.getReference(ScoringModel.class, result.scoringModelId());
 
-        AnalysisResult analysis = analysisResultRepository.save(toAnalysisResult(result, user, version, model));
-        personalizedScoreRepository.save(toPersonalizedScore(result, analysis, user, version, model));
+        AnalysisResult newAnalysis = toAnalysisResult(result, user, version, model);
+        AnalysisResult analysis = executeOrFail(() -> analysisResultRepository.save(newAnalysis),
+                "Falha ao criar analise no banco de dados");
+
+        PersonalizedScore personalizedScore = toPersonalizedScore(result, analysis, user, version, model);
+        executeOrFail(() -> personalizedScoreRepository.save(personalizedScore),
+                "Falha ao criar score personalizado no banco de dados");
 
         List<RuleEvaluation> ruleEvaluations = matchedRules.stream()
                 .map(rule -> toRuleEvaluation(rule, analysis))
                 .toList();
-        ruleEvaluationRepository.saveAll(ruleEvaluations);
+        executeOrFail(() -> ruleEvaluationRepository.saveAll(ruleEvaluations),
+                "Falha ao criar avaliacao de regra no banco de dados");
 
-        productScoreRepository.save(updatedProductScore(result, version, model));
-        entityManager.flush();
+        ProductScore productScore = updatedProductScore(result, version, model);
+        executeOrFail(() -> productScoreRepository.save(productScore),
+                "Falha ao atualizar score de produto no banco de dados");
+
+        executeOrFail(() -> {
+            entityManager.flush();
+            return null;
+        }, "Falha ao gravar a classificacao no banco de dados");
     }
 
     private AnalysisResult toAnalysisResult(ClassificationResult result, User user, ProductVersion version,
@@ -109,9 +131,11 @@ public class ClassificationRecorder {
     }
 
     private ProductScore updatedProductScore(ClassificationResult result, ProductVersion version, ScoringModel model) {
-        ProductScore productScore = productScoreRepository
-                .findByProductVersionIdAndScoringModelId(result.productVersionId(), result.scoringModelId())
-                .orElseGet(() -> newProductScore(version, model));
+        Optional<ProductScore> currentProductScore = executeOrFail(() -> productScoreRepository
+                        .findByProductVersionIdAndScoringModelId(result.productVersionId(), result.scoringModelId()),
+                "Falha ao consultar score de produto no banco de dados");
+
+        ProductScore productScore = currentProductScore.orElseGet(() -> newProductScore(version, model));
         ClassificationResult.Breakdown breakdown = result.breakdown();
         productScore.setOverallScore(breakdown.qualityScore());
         productScore.setHealthScore(breakdown.healthScore());
@@ -129,5 +153,16 @@ public class ClassificationRecorder {
         productScore.setProductVersion(version);
         productScore.setScoringModel(model);
         return productScore;
+    }
+
+    private <T> T executeOrFail(Supplier<T> action, String errorMessage) {
+        try {
+            return action.get();
+        } catch (DataIntegrityViolationException ex) {
+            throw DataIntegrityViolationTranslator.translate(ex);
+        } catch (DataAccessException ex) {
+            log.error(errorMessage, ex);
+            throw DataAccessFailureTranslator.translate(ex, errorMessage);
+        }
     }
 }

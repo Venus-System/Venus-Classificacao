@@ -1,11 +1,15 @@
 package com.venus.classificacao.service.profile;
 
+import com.venus.classificacao.entity.ingredient.AllergyIngredient;
 import com.venus.classificacao.entity.shared.ProfileTag;
 import com.venus.classificacao.entity.user.Allergy;
 import com.venus.classificacao.entity.user.UserAllergy;
 import com.venus.classificacao.entity.user.UserPreference;
 import com.venus.classificacao.entity.user.UserProfile;
+import com.venus.classificacao.entity.user.UserProfileTag;
 import com.venus.classificacao.exception.ClassificationErrorCode;
+import com.venus.classificacao.exception.DataAccessFailureTranslator;
+import com.venus.classificacao.exception.DataIntegrityViolationTranslator;
 import com.venus.classificacao.exception.ResourceNotFoundException;
 import com.venus.classificacao.repository.ingredient.AllergyIngredientRepository;
 import com.venus.classificacao.repository.shared.ProfileTagRepository;
@@ -18,11 +22,18 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ProfileSnapshotLoader {
+
+    private static final Logger log = LoggerFactory.getLogger(ProfileSnapshotLoader.class);
 
     private final UserProfileRepository userProfileRepository;
     private final UserPreferenceRepository userPreferenceRepository;
@@ -47,7 +58,8 @@ public class ProfileSnapshotLoader {
 
     public ProfileSnapshot load(Long userId) {
         UserProfile userProfile = getProfileOrThrow(userId);
-        Optional<UserPreference> userPreference = userPreferenceRepository.findByUserId(userId);
+        Optional<UserPreference> userPreference = executeOrFail(() -> userPreferenceRepository.findByUserId(userId),
+                "Falha ao consultar preferencias de usuario no banco de dados");
 
         ProfileSnapshot.Answers answers = toAnswers(userProfile, userPreference);
         Map<String, Long> tagIdBySlug = tagIdBySlug();
@@ -58,9 +70,11 @@ public class ProfileSnapshotLoader {
     }
 
     private UserProfile getProfileOrThrow(Long userId) {
-        return userProfileRepository.findByUserId(userId)
-                .orElseThrow(() -> new ResourceNotFoundException(ClassificationErrorCode.PROFILE_NOT_FOUND,
-                        "Perfil nao encontrado para o usuario com id " + userId));
+        Optional<UserProfile> userProfile = executeOrFail(() -> userProfileRepository.findByUserId(userId),
+                "Falha ao consultar perfil de usuario no banco de dados");
+
+        return userProfile.orElseThrow(() -> new ResourceNotFoundException(ClassificationErrorCode.PROFILE_NOT_FOUND,
+                "Perfil nao encontrado para o usuario com id " + userId));
     }
 
     private ProfileSnapshot.Answers toAnswers(UserProfile userProfile, Optional<UserPreference> userPreference) {
@@ -82,12 +96,18 @@ public class ProfileSnapshotLoader {
     }
 
     private Map<String, Long> tagIdBySlug() {
-        return profileTagRepository.findAll().stream()
+        List<ProfileTag> profileTags = executeOrFail(profileTagRepository::findAll,
+                "Falha ao consultar tags de perfil no banco de dados");
+
+        return profileTags.stream()
                 .collect(Collectors.toMap(ProfileTag::getSlug, ProfileTag::getId));
     }
 
     private List<ProfileSnapshot.MarkedTag> markedTags(Long userId) {
-        return userProfileTagRepository.findByUserId(userId).stream()
+        List<UserProfileTag> userProfileTags = executeOrFail(() -> userProfileTagRepository.findByUserId(userId),
+                "Falha ao consultar tags do usuario");
+
+        return userProfileTags.stream()
                 .map(userProfileTag -> toMarkedTag(userProfileTag.getProfileTag()))
                 .toList();
     }
@@ -97,7 +117,8 @@ public class ProfileSnapshotLoader {
     }
 
     private List<ProfileSnapshot.DeclaredAllergy> declaredAllergies(Long userId) {
-        List<UserAllergy> userAllergies = userAllergyRepository.findByUserId(userId);
+        List<UserAllergy> userAllergies = executeOrFail(() -> userAllergyRepository.findByUserId(userId),
+                "Falha ao consultar alergias do usuario");
         if (userAllergies.isEmpty()) {
             return List.of();
         }
@@ -114,7 +135,11 @@ public class ProfileSnapshotLoader {
                 .map(userAllergy -> userAllergy.getAllergy().getId())
                 .toList();
 
-        return allergyIngredientRepository.findByAllergyIdIn(allergyIds).stream()
+        List<AllergyIngredient> allergyIngredients = executeOrFail(
+                () -> allergyIngredientRepository.findByAllergyIdIn(allergyIds),
+                "Falha ao consultar ingredientes da alergia");
+
+        return allergyIngredients.stream()
                 .collect(Collectors.groupingBy(link -> link.getAllergy().getId(),
                         Collectors.mapping(link -> link.getIngredient().getId(), Collectors.toSet())));
     }
@@ -136,5 +161,16 @@ public class ProfileSnapshotLoader {
 
     private boolean isTrue(Boolean answer) {
         return Boolean.TRUE.equals(answer);
+    }
+
+    private <T> T executeOrFail(Supplier<T> action, String errorMessage) {
+        try {
+            return action.get();
+        } catch (DataIntegrityViolationException ex) {
+            throw DataIntegrityViolationTranslator.translate(ex);
+        } catch (DataAccessException ex) {
+            log.error(errorMessage, ex);
+            throw DataAccessFailureTranslator.translate(ex, errorMessage);
+        }
     }
 }
