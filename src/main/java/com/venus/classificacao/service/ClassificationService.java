@@ -20,12 +20,12 @@ import com.venus.classificacao.service.quality.BucketWeightsLoader;
 import com.venus.classificacao.service.recording.ClassificationRecorder;
 import com.venus.classificacao.service.verdict.Evaluation;
 import com.venus.classificacao.service.verdict.PersonalizedScoreCalculator;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -65,9 +65,8 @@ public class ClassificationService {
 
     @Transactional
     public ClassificationResponse classify(ClassificationRequest request) {
-        ClassificationResult result = executeOrFail(
-                () -> classifyAndRecord(request.userId(), request.productVersionId(), request.scoringModelId()),
-                "Falha ao classificar o produto no banco de dados");
+        ClassificationResult result = classifyAndRecord(request.userId(), request.productVersionId(),
+                request.scoringModelId());
 
         return classificationMapper.toResponse(result);
     }
@@ -94,13 +93,25 @@ public class ClassificationService {
 
     private ScoringModel requestedOrActiveModel(Long scoringModelId) {
         if (scoringModelId == null) {
-            return scoringModelRepository.findFirstByIsActiveTrueOrderByIdDesc()
-                    .orElseThrow(() -> new ResourceNotFoundException(ClassificationErrorCode.NO_ACTIVE_SCORING_MODEL,
-                            "Nenhum modelo de score ativo"));
+            return getActiveModelOrThrow();
         }
-        return scoringModelRepository.findById(scoringModelId)
-                .orElseThrow(() -> new ResourceNotFoundException(ClassificationErrorCode.SCORING_MODEL_NOT_FOUND,
-                        "Modelo de score nao encontrado com id " + scoringModelId));
+        return getModelOrThrow(scoringModelId);
+    }
+
+    private ScoringModel getActiveModelOrThrow() {
+        Optional<ScoringModel> activeModel = executeOrFail(scoringModelRepository::findFirstByIsActiveTrueOrderByIdDesc,
+                "Falha ao consultar modelo de scoring ativo");
+
+        return activeModel.orElseThrow(() -> new ResourceNotFoundException(ClassificationErrorCode.NO_ACTIVE_SCORING_MODEL,
+                "Nenhum modelo de score ativo"));
+    }
+
+    private ScoringModel getModelOrThrow(Long scoringModelId) {
+        Optional<ScoringModel> scoringModel = executeOrFail(() -> scoringModelRepository.findById(scoringModelId),
+                "Falha ao consultar modelo de scoring no banco de dados");
+
+        return scoringModel.orElseThrow(() -> new ResourceNotFoundException(ClassificationErrorCode.SCORING_MODEL_NOT_FOUND,
+                "Modelo de score nao encontrado com id " + scoringModelId));
     }
 
     private int elapsedMillis(long startedAt) {
