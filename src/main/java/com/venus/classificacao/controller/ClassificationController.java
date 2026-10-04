@@ -17,7 +17,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
 @RequestMapping("/api/classifications")
-@Tag(name = "Classificação", description = "Nota do produto para o perfil do usuário, com os motivos da nota.")
+@Tag(name = "Classificações", description = "Nota do produto para o perfil do usuário, com os motivos da nota.")
 public class ClassificationController {
 
     private final ClassificationService classificationService;

@@ -21,11 +21,11 @@ public class OpenApiSecurityCustomizer implements OpenApiCustomizer {
         openApi.getPaths().forEach((path, pathItem) -> pathItem.readOperations().forEach(operation -> {
             operation.addSecurityItem(new SecurityRequirement().addList(SECURITY_SCHEME_NAME));
             OpenApiErrorResponsesCustomizer.addResponse(operation.getResponses(), HttpStatus.UNAUTHORIZED,
-                    "Token ausente, inválido ou vencido. Mande o token do Firebase no cabeçalho Authorization: Bearer <token>.",
+                    "Token ausente, inválido ou vencido. Mande o token no cabeçalho Authorization: Bearer <token>.",
                     OpenApiErrorResponsesCustomizer.example(HttpStatus.UNAUTHORIZED, null,
                             SecurityErrorHandler.MISSING_TOKEN_MESSAGE, path, List.of()));
             OpenApiErrorResponsesCustomizer.addResponse(operation.getResponses(), HttpStatus.FORBIDDEN,
-                    "O token é válido, mas o userId não é o do token ou a conta não está ativa.",
+                    "O token é válido, mas não tem permissão para esta rota ou para este registro.",
                     OpenApiErrorResponsesCustomizer.example(HttpStatus.FORBIDDEN, null,
                             SecurityErrorHandler.ACCESS_DENIED_MESSAGE, path, List.of()));
         }));

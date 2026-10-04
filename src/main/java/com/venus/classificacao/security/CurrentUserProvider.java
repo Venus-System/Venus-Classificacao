@@ -30,6 +30,23 @@ public class CurrentUserProvider {
         this.userRepository = userRepository;
     }
 
+    public boolean isAdmin() {
+        Authentication authentication = currentAuthentication();
+        return authentication != null && hasAuthority(authentication, SecurityRoles.ADMIN);
+    }
+
+    public Optional<Long> adminUserId() {
+        Authentication authentication = currentAuthentication();
+        if (authentication == null || !hasAuthority(authentication, SecurityRoles.ANALYST)) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Long.valueOf(authentication.getName()));
+        } catch (NumberFormatException ex) {
+            return Optional.empty();
+        }
+    }
+
     public Optional<String> firebaseUid() {
         Authentication authentication = currentAuthentication();
         if (authentication == null || !hasAuthority(authentication, SecurityRoles.USER)) {

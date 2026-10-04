@@ -40,10 +40,12 @@ public class SwaggerConfig {
                 da classificação e diz o motivo sem precisar ler a mensagem. O `details` só vem preenchido em erro \
                 de validação, com uma linha por campo recusado.
 
-                **Autenticação** — todas as rotas exigem o cabeçalho `Authorization: Bearer <token>`, com o \
-                **ID token do Firebase** que o app recebe no login do usuário. Sem token, ou com token inválido ou \
-                vencido, a resposta é 401. Com um token válido, mas de outro usuário ou de uma conta que não está \
-                ativa, 403. Use o botão **Authorize** para testar aqui.
+                **Autenticação** — todas as rotas exigem o cabeçalho `Authorization: Bearer <token>`, com um de dois \
+                tokens: o **ID token do Firebase**, que o app recebe no login do usuário, ou o **token de \
+                administrador**, devolvido pelo `POST /api/auth/admin/login` do Venus-CRUD. Sem token, ou com token \
+                inválido ou vencido, a resposta é 401. Com um token válido, mas sem permissão para o registro, 403: o \
+                usuário só acessa os próprios dados, com a conta ativa, e só o administrador com papel `ADMIN` acessa \
+                os de qualquer usuário. Use o botão **Authorize** para testar aqui.
                 """;
     }
 
@@ -52,7 +54,7 @@ public class SwaggerConfig {
                 .type(SecurityScheme.Type.HTTP)
                 .scheme("bearer")
                 .bearerFormat("JWT")
-                .description("ID token do Firebase (usuário do app).");
+                .description("ID token do Firebase (usuário do app) ou o token de POST /api/auth/admin/login do Venus-CRUD (administrador).");
     }
 
     private Schema<?> errorResponseSchema() {

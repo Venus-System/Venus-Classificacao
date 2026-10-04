@@ -1,19 +1,30 @@
 package com.venus.classificacao.config;
 
+import com.venus.classificacao.security.AdminJwtAuthenticationConverter;
+import com.venus.classificacao.security.AdminTokenService;
 import com.venus.classificacao.security.FirebaseJwtAuthenticationConverter;
 import com.venus.classificacao.security.FirebaseTokenValidator;
 import com.venus.classificacao.security.SecurityErrorHandler;
 import com.venus.classificacao.security.SecurityRoutes;
 import jakarta.servlet.DispatcherType;
 import java.util.List;
+import java.util.Map;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
+import org.springframework.security.oauth2.server.resource.authentication.JwtIssuerAuthenticationManagerResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -26,9 +37,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityProperties securityProperties,
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+            JwtIssuerAuthenticationManagerResolver authenticationManagerResolver,
             SecurityErrorHandler securityErrorHandler) throws Exception {
-        String projectId = securityProperties.firebase().projectId();
         http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
@@ -38,9 +49,7 @@ public class SecurityConfig {
                         .requestMatchers(SecurityRoutes.DOCUMENTATION).permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt
-                                .decoder(FirebaseTokenValidator.decoderFor(projectId))
-                                .jwtAuthenticationConverter(new FirebaseJwtAuthenticationConverter()))
+                        .authenticationManagerResolver(authenticationManagerResolver)
                         .authenticationEntryPoint(securityErrorHandler)
                         .accessDeniedHandler(securityErrorHandler))
                 .exceptionHandling(exceptions -> exceptions
@@ -48,6 +57,18 @@ public class SecurityConfig {
                         .accessDeniedHandler(securityErrorHandler));
 
         return http.build();
+    }
+
+    @Bean
+    public JwtIssuerAuthenticationManagerResolver authenticationManagerResolver(SecurityProperties securityProperties,
+            AdminTokenService adminTokenService) {
+        String projectId = securityProperties.firebase().projectId();
+        Map<String, AuthenticationManager> managers = Map.of(
+                FirebaseTokenValidator.issuerFor(projectId),
+                authenticationManager(FirebaseTokenValidator.decoderFor(projectId), new FirebaseJwtAuthenticationConverter()),
+                AdminTokenService.ISSUER,
+                authenticationManager(adminTokenService.decoder(), new AdminJwtAuthenticationConverter()));
+        return new JwtIssuerAuthenticationManagerResolver(managers::get);
     }
 
     @Bean
@@ -63,5 +84,12 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
+    }
+
+    private AuthenticationManager authenticationManager(JwtDecoder decoder,
+            Converter<Jwt, ? extends AbstractAuthenticationToken> converter) {
+        JwtAuthenticationProvider provider = new JwtAuthenticationProvider(decoder);
+        provider.setJwtAuthenticationConverter(converter);
+        return new ProviderManager(provider);
     }
 }
