@@ -1,6 +1,7 @@
 package com.venus.classificacao.security;
 
 import com.venus.classificacao.entity.user.User;
+import java.util.Optional;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,9 +16,13 @@ public class OwnershipGuard {
     }
 
     public boolean canAccessUser(Long userId) {
-        return userId != null && currentUserProvider.activeUser()
-                .map(User::getId)
-                .filter(userId::equals)
-                .isPresent();
+        if (currentUserProvider.isAdmin()) {
+            return true;
+        }
+        return userId != null && currentUserId().filter(userId::equals).isPresent();
+    }
+
+    private Optional<Long> currentUserId() {
+        return currentUserProvider.activeUser().map(User::getId);
     }
 }
