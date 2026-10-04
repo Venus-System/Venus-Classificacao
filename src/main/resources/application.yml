@@ -38,6 +38,8 @@ springdoc:
 
 venus:
   security:
+    admin-token:
+      secret: ${ADMIN_JWT_SECRET}
     firebase:
       project-id: ${FIREBASE_PROJECT_ID}
   scoring:
