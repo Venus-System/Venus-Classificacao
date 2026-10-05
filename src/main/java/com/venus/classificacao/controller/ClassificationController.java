@@ -61,4 +61,15 @@ public class ClassificationController {
             @Parameter(description = SCORING_MODEL_DESCRIPTION) @RequestParam(required = false) Long scoringModelId) {
         return ResponseEntity.ok(savedClassificationService.findLatestByVersion(userId, versionId, scoringModelId));
     }
+
+    @Operation(operationId = "classificationFindByProduct",
+            summary = "Devolve a última análise salva do usuário para a versão atual do produto")
+    @PreAuthorize("@ownership.canAccessUser(#userId)")
+    @GetMapping("/user/{userId}/product/{productId}")
+    public ResponseEntity<ClassificationResponse> findByProduct(
+            @PathVariable Long userId,
+            @PathVariable Long productId,
+            @Parameter(description = SCORING_MODEL_DESCRIPTION) @RequestParam(required = false) Long scoringModelId) {
+        return ResponseEntity.ok(savedClassificationService.findLatestByProduct(userId, productId, scoringModelId));
+    }
 }

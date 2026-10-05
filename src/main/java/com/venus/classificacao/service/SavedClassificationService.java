@@ -1,15 +1,18 @@
 package com.venus.classificacao.service;
 
 import com.venus.classificacao.dto.response.ClassificationResponse;
+import com.venus.classificacao.entity.product.ProductVersion;
 import com.venus.classificacao.entity.scoring.ScoringModel;
 import com.venus.classificacao.exception.ClassificationErrorCode;
 import com.venus.classificacao.exception.DataAccessFailureTranslator;
 import com.venus.classificacao.exception.DataIntegrityViolationTranslator;
 import com.venus.classificacao.exception.ResourceNotFoundException;
 import com.venus.classificacao.mapper.ClassificationMapper;
+import com.venus.classificacao.repository.product.ProductRepository;
 import com.venus.classificacao.repository.product.ProductVersionRepository;
 import com.venus.classificacao.service.recording.SavedClassificationLoader;
 import com.venus.classificacao.service.scoring.ScoringModelLoader;
+import java.util.Optional;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,15 +29,18 @@ public class SavedClassificationService {
     private final ScoringModelLoader scoringModelLoader;
     private final SavedClassificationLoader savedClassificationLoader;
     private final ProductVersionRepository productVersionRepository;
+    private final ProductRepository productRepository;
     private final ClassificationMapper classificationMapper;
 
     public SavedClassificationService(ScoringModelLoader scoringModelLoader,
             SavedClassificationLoader savedClassificationLoader,
             ProductVersionRepository productVersionRepository,
+            ProductRepository productRepository,
             ClassificationMapper classificationMapper) {
         this.scoringModelLoader = scoringModelLoader;
         this.savedClassificationLoader = savedClassificationLoader;
         this.productVersionRepository = productVersionRepository;
+        this.productRepository = productRepository;
         this.classificationMapper = classificationMapper;
     }
 
@@ -46,6 +52,31 @@ public class SavedClassificationService {
         ClassificationResult savedResult = savedClassificationLoader.load(target)
                 .orElseThrow(() -> analysisNotFound(target));
         return classificationMapper.toResponse(savedResult);
+    }
+
+    @Transactional(readOnly = true)
+    public ClassificationResponse findLatestByProduct(Long userId, Long productId, Long scoringModelId) {
+        ProductVersion currentVersion = getCurrentVersionOrThrow(productId);
+        return findLatestByVersion(userId, currentVersion.getId(), scoringModelId);
+    }
+
+    private ProductVersion getCurrentVersionOrThrow(Long productId) {
+        Optional<ProductVersion> currentVersion = executeOrFail(
+                () -> productVersionRepository.findByProductIdAndIsCurrentTrue(productId),
+                "Falha ao consultar versao atual do produto");
+
+        return currentVersion.orElseThrow(() -> currentVersionNotFound(productId));
+    }
+
+    private ResourceNotFoundException currentVersionNotFound(Long productId) {
+        boolean productExists = executeOrFail(() -> productRepository.existsById(productId),
+                "Falha ao consultar produto no banco de dados");
+        if (!productExists) {
+            return new ResourceNotFoundException(ClassificationErrorCode.PRODUCT_NOT_FOUND,
+                    "Produto nao encontrado com id " + productId);
+        }
+        return new ResourceNotFoundException(ClassificationErrorCode.VERSION_NOT_FOUND,
+                "O produto " + productId + " nao tem versao atual");
     }
 
     private ResourceNotFoundException analysisNotFound(ClassificationTarget target) {
