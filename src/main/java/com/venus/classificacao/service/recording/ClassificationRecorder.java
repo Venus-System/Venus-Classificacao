@@ -62,9 +62,9 @@ public class ClassificationRecorder {
         AnalysisResult analysis = executeOrFail(() -> analysisResultRepository.save(newAnalysis),
                 "Falha ao criar analise no banco de dados");
 
-        PersonalizedScore personalizedScore = toPersonalizedScore(result, analysis, user, version, model);
+        PersonalizedScore personalizedScore = updatedPersonalizedScore(result, analysis, user, version, model);
         executeOrFail(() -> personalizedScoreRepository.save(personalizedScore),
-                "Falha ao criar score personalizado no banco de dados");
+                "Falha ao atualizar score personalizado no banco de dados");
 
         List<RuleEvaluation> ruleEvaluations = matchedRules.stream()
                 .map(rule -> toRuleEvaluation(rule, analysis))
@@ -102,18 +102,29 @@ public class ClassificationRecorder {
         return analysis;
     }
 
-    private PersonalizedScore toPersonalizedScore(ClassificationResult result, AnalysisResult analysis, User user,
+    private PersonalizedScore updatedPersonalizedScore(ClassificationResult result, AnalysisResult analysis, User user,
             ProductVersion version, ScoringModel model) {
-        PersonalizedScore personalizedScore = new PersonalizedScore();
-        personalizedScore.setUser(user);
-        personalizedScore.setProductVersion(version);
+        Optional<PersonalizedScore> currentPersonalizedScore = executeOrFail(() -> personalizedScoreRepository
+                        .findByUserIdAndProductVersionIdAndScoringModelId(result.userId(), result.productVersionId(),
+                                result.scoringModelId()),
+                "Falha ao verificar score personalizado existente");
+
+        PersonalizedScore personalizedScore = currentPersonalizedScore
+                .orElseGet(() -> newPersonalizedScore(user, version, model));
         personalizedScore.setAnalysisResult(analysis);
-        personalizedScore.setScoringModel(model);
         personalizedScore.setFinalScore(result.finalScore());
         personalizedScore.setCompatibilityPercentage(result.compatibilityPercentage());
         personalizedScore.setRiskLevel(result.riskLevel());
         personalizedScore.setRecommendationLevel(result.recommendationLevel());
         personalizedScore.setSummary(result.summary());
+        return personalizedScore;
+    }
+
+    private PersonalizedScore newPersonalizedScore(User user, ProductVersion version, ScoringModel model) {
+        PersonalizedScore personalizedScore = new PersonalizedScore();
+        personalizedScore.setUser(user);
+        personalizedScore.setProductVersion(version);
+        personalizedScore.setScoringModel(model);
         return personalizedScore;
     }
 
