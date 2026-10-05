@@ -9,6 +9,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface RuleEvaluationRepository extends JpaRepository<RuleEvaluation, Long> {
 
-    @EntityGraph(attributePaths = {"ingredient", "profileTag"})
+    @EntityGraph(attributePaths = {"compatibilityRule", "ingredient", "profileTag"})
     List<RuleEvaluation> findByAnalysisResultId(Long analysisResultId);
 }
