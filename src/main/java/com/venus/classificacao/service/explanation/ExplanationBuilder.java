@@ -25,6 +25,12 @@ public class ExplanationBuilder {
         return new Explanation(reasons, summary);
     }
 
+    public List<Reason> ruleReasonsOf(List<MatchedRule> matchedRules) {
+        return Stream.of(blockReasons(matchedRules), ruleReasons(matchedRules))
+                .flatMap(List::stream)
+                .toList();
+    }
+
     private List<Reason> reasonsOf(Evaluation evaluation) {
         List<MatchedRule> matchedRules = evaluation.profileResult().distinctMatchedRules();
         List<String> preferenceNotes = evaluation.profileResult().preferenceNotes();

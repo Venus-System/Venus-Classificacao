@@ -2,11 +2,14 @@ package com.venus.classificacao.repository.scan;
 
 import com.venus.classificacao.entity.scan.PersonalizedScore;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface PersonalizedScoreRepository extends JpaRepository<PersonalizedScore, Long> {
 
-    Optional<PersonalizedScore> findByAnalysisResultId(Long analysisResultId);
+    @EntityGraph(attributePaths = {"analysisResult"})
+    Optional<PersonalizedScore> findByUserIdAndProductVersionIdAndScoringModelId(Long userId, Long productVersionId,
+            Long scoringModelId);
 }

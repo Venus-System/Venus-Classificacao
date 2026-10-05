@@ -268,6 +268,8 @@ A rota mostra no Swagger os erros possíveis (400, 401, 403, 404, 422…).
 | Rota | Quem | O que faz |
 |---|---|---|
 | `POST /api/classifications` | dono ou `ADMIN` | Calcula, grava e devolve a nota do produto para o perfil do usuário |
+| `GET /api/classifications/user/{userId}/product-version/{versionId}` | dono ou `ADMIN` | Devolve a última análise salva daquela versão |
+| `GET /api/classifications/user/{userId}/product/{productId}` | dono ou `ADMIN` | Acha a versão atual do produto e devolve a última análise salva dela |
 
 Corpo:
 
@@ -283,13 +285,33 @@ O `scoringModelId` é opcional: sem ele, a API usa o modelo ativo de maior id.
 
 A resposta traz a nota final, a faixa (`recommendationLevel`), o risco (`riskLevel`), a compatibilidade com o perfil, quantos ingredientes a versão tem e quantos ainda não foram avaliados, o detalhamento das notas (`breakdown`), os motivos (`reasons`, com bloqueio e alergia sempre primeiro) e um resumo em texto (`summary`).
 
+Nos dois `GET` o `scoringModelId` também é opcional. O 404 com `code` `ANALYSIS_NOT_FOUND` quer dizer que a pessoa
+ainda não analisou aquela versão com aquele modelo: o app mostra a nota genérica do produto ou chama o `POST`. O `GET`
+por produto olha só a versão atual, então uma análise de versão antiga não volta.
+
+O `GET` devolve o que fica gravado: a nota, a faixa, o risco, a compatibilidade, as quatro notas, os motivos de regra
+e o resumo. Os campos que só existem na hora do cálculo (`qualityScore`, `qualityPoints`, `profilePoints`,
+`ingredientCount` e `unevaluatedIngredientCount`) vêm nulos.
+
+Cada usuário tem um score pessoal por versão e modelo: o `POST` seguinte atualiza esse score e guarda a análise nova
+no histórico.
+
 ## Testes
 
 ```bash
 ./mvnw verify
 ```
 
-Os testes do motor ainda não foram escritos. Hoje o `./mvnw verify` compila e empacota a API, e é o que o CI roda.
+Precisa do Docker aberto: o teste de integração sobe um Postgres 16 com o `00_schema.sql` do Venus-Banco e uma seed
+pequena (`src/test/resources/venus-banco/`). Sem Docker, ele é pulado.
+
+| Tipo | Onde | O que cobre |
+|---|---|---|
+| Unitário | `service/**` | as quatro notas, os pesos, as perguntas, as travas, a cascata de regras e os motivos |
+| Segurança | `ClassificationControllerSecurityTest`, `OwnershipGuardTest`, `PreAuthorizeCoverageTest` | 401, 403, o admin e o `@PreAuthorize` em toda rota |
+| Integração | `ClassificationApiIntegrationTest` | o `POST` gravando, o segundo `POST` igual, os dois `GET` e os 404 e 422 |
+
+O `01_users_email_password_hash.sql` do teste cobre duas colunas que já estão no banco e ainda não estão no `00_schema.sql` do Venus-Banco. Quando o Venus-Banco mudar o schema, copiar o `sql/00_schema.sql` de lá por cima do arquivo do teste e apagar o `01` se as colunas já estiverem nele.
 
 ## CI/CD
 

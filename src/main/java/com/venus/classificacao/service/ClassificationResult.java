@@ -26,8 +26,8 @@ public record ClassificationResult(
         RecommendationLevel recommendationLevel,
         RiskLevel riskLevel,
         BigDecimal compatibilityPercentage,
-        int ingredientCount,
-        int unevaluatedIngredientCount,
+        Integer ingredientCount,
+        Integer unevaluatedIngredientCount,
         Breakdown breakdown,
         List<Reason> reasons,
         String summary,
@@ -76,7 +76,7 @@ public record ClassificationResult(
     }
 
     public record Breakdown(
-            int qualityScore,
+            Integer qualityScore,
             BigDecimal qualityPoints,
             BigDecimal profilePoints,
             Integer healthScore,

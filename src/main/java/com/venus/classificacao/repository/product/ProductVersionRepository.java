@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 public interface ProductVersionRepository extends JpaRepository<ProductVersion, Long> {
 
     Optional<ProductVersion> findByProductIdAndIsCurrentTrue(Long productId);
+
     @EntityGraph(attributePaths = {"product", "product.brand"})
     Optional<ProductVersion> findWithBrandById(Long id);
 }

@@ -3,12 +3,7 @@ package com.venus.classificacao.service;
 import com.venus.classificacao.dto.request.ClassificationRequest;
 import com.venus.classificacao.dto.response.ClassificationResponse;
 import com.venus.classificacao.entity.scoring.ScoringModel;
-import com.venus.classificacao.exception.ClassificationErrorCode;
-import com.venus.classificacao.exception.DataAccessFailureTranslator;
-import com.venus.classificacao.exception.DataIntegrityViolationTranslator;
-import com.venus.classificacao.exception.ResourceNotFoundException;
 import com.venus.classificacao.mapper.ClassificationMapper;
-import com.venus.classificacao.repository.scoring.ScoringModelRepository;
 import com.venus.classificacao.service.explanation.Explanation;
 import com.venus.classificacao.service.explanation.ExplanationBuilder;
 import com.venus.classificacao.service.product.ProductSnapshot;
@@ -18,25 +13,18 @@ import com.venus.classificacao.service.profile.ProfileSnapshotLoader;
 import com.venus.classificacao.service.quality.BucketWeights;
 import com.venus.classificacao.service.quality.BucketWeightsLoader;
 import com.venus.classificacao.service.recording.ClassificationRecorder;
+import com.venus.classificacao.service.scoring.ScoringModelLoader;
 import com.venus.classificacao.service.verdict.Evaluation;
 import com.venus.classificacao.service.verdict.PersonalizedScoreCalculator;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataAccessException;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ClassificationService {
 
-    private static final Logger log = LoggerFactory.getLogger(ClassificationService.class);
-
-    private final ScoringModelRepository scoringModelRepository;
+    private final ScoringModelLoader scoringModelLoader;
     private final ProfileSnapshotLoader profileSnapshotLoader;
     private final ProductSnapshotLoader productSnapshotLoader;
     private final BucketWeightsLoader bucketWeightsLoader;
@@ -45,7 +33,7 @@ public class ClassificationService {
     private final ClassificationRecorder classificationRecorder;
     private final ClassificationMapper classificationMapper;
 
-    public ClassificationService(ScoringModelRepository scoringModelRepository,
+    public ClassificationService(ScoringModelLoader scoringModelLoader,
             ProfileSnapshotLoader profileSnapshotLoader,
             ProductSnapshotLoader productSnapshotLoader,
             BucketWeightsLoader bucketWeightsLoader,
@@ -53,7 +41,7 @@ public class ClassificationService {
             ExplanationBuilder explanationBuilder,
             ClassificationRecorder classificationRecorder,
             ClassificationMapper classificationMapper) {
-        this.scoringModelRepository = scoringModelRepository;
+        this.scoringModelLoader = scoringModelLoader;
         this.profileSnapshotLoader = profileSnapshotLoader;
         this.productSnapshotLoader = productSnapshotLoader;
         this.bucketWeightsLoader = bucketWeightsLoader;
@@ -74,7 +62,7 @@ public class ClassificationService {
     private ClassificationResult classifyAndRecord(Long userId, Long productVersionId, Long scoringModelId) {
         long startedAt = System.nanoTime();
 
-        ScoringModel scoringModel = requestedOrActiveModel(scoringModelId);
+        ScoringModel scoringModel = scoringModelLoader.load(scoringModelId);
         ProfileSnapshot profile = profileSnapshotLoader.load(userId);
         Set<Long> activeTagIds = personalizedScoreCalculator.activeTagIds(profile);
         ProductSnapshot product = productSnapshotLoader.load(productVersionId, scoringModel.getId(), activeTagIds);
@@ -91,41 +79,7 @@ public class ClassificationService {
         return result;
     }
 
-    private ScoringModel requestedOrActiveModel(Long scoringModelId) {
-        if (scoringModelId == null) {
-            return getActiveModelOrThrow();
-        }
-        return getModelOrThrow(scoringModelId);
-    }
-
-    private ScoringModel getActiveModelOrThrow() {
-        Optional<ScoringModel> activeModel = executeOrFail(scoringModelRepository::findFirstByIsActiveTrueOrderByIdDesc,
-                "Falha ao consultar modelo de scoring ativo");
-
-        return activeModel.orElseThrow(() -> new ResourceNotFoundException(ClassificationErrorCode.NO_ACTIVE_SCORING_MODEL,
-                "Nenhum modelo de score ativo"));
-    }
-
-    private ScoringModel getModelOrThrow(Long scoringModelId) {
-        Optional<ScoringModel> scoringModel = executeOrFail(() -> scoringModelRepository.findById(scoringModelId),
-                "Falha ao consultar modelo de scoring no banco de dados");
-
-        return scoringModel.orElseThrow(() -> new ResourceNotFoundException(ClassificationErrorCode.SCORING_MODEL_NOT_FOUND,
-                "Modelo de score nao encontrado com id " + scoringModelId));
-    }
-
     private int elapsedMillis(long startedAt) {
         return Math.toIntExact(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
-    }
-
-    private <T> T executeOrFail(Supplier<T> action, String errorMessage) {
-        try {
-            return action.get();
-        } catch (DataIntegrityViolationException ex) {
-            throw DataIntegrityViolationTranslator.translate(ex);
-        } catch (DataAccessException ex) {
-            log.error(errorMessage, ex);
-            throw DataAccessFailureTranslator.translate(ex, errorMessage);
-        }
     }
 }

@@ -23,13 +23,16 @@ public record ClassificationResponse(
         @Schema(description = "Quanto o produto combina com o perfil, de 0 a 100. Nulo quando nenhuma pergunta do perfil "
                 + "entrou na conta.", example = "23.53", nullable = true)
         BigDecimal compatibilityPercentage,
-        @Schema(description = "Quantos ingredientes a versão tem.", example = "18")
+        @Schema(description = "Quantos ingredientes a versão tem. Nulo no GET, que não grava esse número.",
+                example = "18", nullable = true)
         Integer ingredientCount,
-        @Schema(description = "Quantos ingredientes ainda não têm avaliação de saúde e ambiental.", example = "0")
+        @Schema(description = "Quantos ingredientes ainda não têm avaliação de saúde e ambiental. Nulo no GET, que não "
+                + "grava esse número.", example = "0", nullable = true)
         Integer unevaluatedIngredientCount,
         @Schema(description = "Notas que compõem a nota final.")
         ClassificationBreakdownResponse breakdown,
-        @Schema(description = "Motivos da nota. Bloqueio e alergia vêm sempre primeiro.")
+        @Schema(description = "Motivos da nota. Bloqueio e alergia vêm sempre primeiro. O GET traz só os motivos de "
+                + "regra de ingrediente, que são os que ficam gravados.")
         List<ClassificationReasonResponse> reasons,
         @Schema(description = "Resumo em texto da nota e dos dois principais motivos.",
                 example = "Nota 41 de 100 - Não recomendado.")

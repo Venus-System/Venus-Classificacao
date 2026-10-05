@@ -1,0 +1,3 @@
+ALTER TABLE venus.users
+    ADD COLUMN IF NOT EXISTS email TEXT,
+    ADD COLUMN IF NOT EXISTS password_hash TEXT;
