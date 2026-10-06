@@ -59,7 +59,7 @@ public class EnvironmentalScoreStrategy implements BucketScoreStrategy {
     }
 
     private OptionalDouble packagingScore(ProductSnapshot product) {
-        Optional<ProductSnapshot.PackagingData> packaging = product.packaging();
+        Optional<ProductSnapshot.PackagingData> packaging = product.evaluatedPackaging();
         if (packaging.isEmpty()) {
             return OptionalDouble.empty();
         }

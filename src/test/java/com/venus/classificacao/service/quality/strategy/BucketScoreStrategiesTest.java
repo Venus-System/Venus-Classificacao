@@ -37,7 +37,7 @@ class BucketScoreStrategiesTest {
     @Test
     void environmentalMixesSeventyPercentIngredientsAndThirtyPercentPackaging() {
         ProductSnapshot product = product(List.of(evaluated(1L, 0, 0, 8, 2)),
-                Optional.of(packaging(true, true, false, "40")), Map.of());
+                Optional.of(evaluatedPackaging(true, true, false, "40")), Map.of());
 
         assertThat(environmental.score(product).getAsDouble()).isCloseTo(74.0, within(PRECISION));
     }
@@ -45,9 +45,25 @@ class BucketScoreStrategiesTest {
     @Test
     void environmentalUsesOnlyThePackagingWhenNoIngredientIsEvaluated() {
         ProductSnapshot product = product(List.of(unevaluated(1L)),
-                Optional.of(packaging(true, true, false, "40")), Map.of());
+                Optional.of(evaluatedPackaging(true, true, false, "40")), Map.of());
 
         assertThat(environmental.score(product).getAsDouble()).isCloseTo(60.0, within(PRECISION));
+    }
+
+    @Test
+    void environmentalUsesOnlyTheIngredientsWhenThePackagingIsNotEvaluated() {
+        ProductSnapshot product = product(List.of(evaluated(1L, 0, 0, 8, 2)),
+                Optional.of(unevaluatedPackaging(true, true, false, "40")), Map.of());
+
+        assertThat(environmental.score(product).getAsDouble()).isCloseTo(80.0, within(PRECISION));
+    }
+
+    @Test
+    void environmentalIsEmptyWithoutEvaluatedIngredientAndWithUnevaluatedPackaging() {
+        ProductSnapshot product = product(List.of(unevaluated(1L)),
+                Optional.of(unevaluatedPackaging(false, false, false, "0")), Map.of());
+
+        assertThat(environmental.score(product)).isEmpty();
     }
 
     @Test
@@ -66,11 +82,18 @@ class BucketScoreStrategiesTest {
     }
 
     @Test
-    void performanceCountsAtMostThreeBenefitsPerIngredient() {
-        ProductSnapshot product = product(List.of(unevaluated(1L), unevaluated(2L)), Optional.empty(),
-                Map.of(1L, 1, 2L, 5));
+    void performanceCountsAtMostThreeBenefitsPerEvaluatedIngredient() {
+        ProductSnapshot product = product(List.of(evaluated(1L, 0, 0, 0, 0), evaluated(2L, 0, 0, 0, 0), unevaluated(3L)),
+                Optional.empty(), Map.of(1L, 1, 2L, 5, 3L, 3));
 
         assertThat(performance.score(product).getAsDouble()).isCloseTo(200.0 / 3, within(PRECISION));
+    }
+
+    @Test
+    void performanceIsEmptyWhenNoIngredientIsEvaluated() {
+        ProductSnapshot product = product(List.of(unevaluated(1L)), Optional.empty(), Map.of(1L, 2));
+
+        assertThat(performance.score(product)).isEmpty();
     }
 
     private static ProductSnapshot product(List<ProductSnapshot.IngredientData> ingredients,
@@ -89,9 +112,19 @@ class BucketScoreStrategiesTest {
         return new ProductSnapshot.IngredientData(id, "Ingrediente " + id, 0, 0, 0, 0, false);
     }
 
-    private static ProductSnapshot.PackagingData packaging(boolean recyclable, boolean refillable,
+    private static ProductSnapshot.PackagingData evaluatedPackaging(boolean recyclable, boolean refillable,
             boolean biodegradable, String recycledContentPercentage) {
+        return packaging(recyclable, refillable, biodegradable, recycledContentPercentage, true);
+    }
+
+    private static ProductSnapshot.PackagingData unevaluatedPackaging(boolean recyclable, boolean refillable,
+            boolean biodegradable, String recycledContentPercentage) {
+        return packaging(recyclable, refillable, biodegradable, recycledContentPercentage, false);
+    }
+
+    private static ProductSnapshot.PackagingData packaging(boolean recyclable, boolean refillable,
+            boolean biodegradable, String recycledContentPercentage, boolean evaluated) {
         return new ProductSnapshot.PackagingData(recyclable, refillable, biodegradable,
-                new BigDecimal(recycledContentPercentage));
+                new BigDecimal(recycledContentPercentage), evaluated);
     }
 }

@@ -33,6 +33,10 @@ public record ProductSnapshot(
         return ingredients.size() - evaluatedIngredients().size();
     }
 
+    public Optional<PackagingData> evaluatedPackaging() {
+        return packaging.filter(PackagingData::evaluated);
+    }
+
     public int benefitCountOf(Long ingredientId) {
         return benefitCountByIngredientId.getOrDefault(ingredientId, 0);
     }
@@ -64,7 +68,8 @@ public record ProductSnapshot(
             boolean recyclable,
             boolean refillable,
             boolean biodegradable,
-            BigDecimal recycledContentPercentage
+            BigDecimal recycledContentPercentage,
+            boolean evaluated
     ) {
     }
 

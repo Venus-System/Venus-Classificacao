@@ -69,20 +69,20 @@ class ClassificationApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", endsWith(
                         "/api/classifications/user/" + userId + "/product-version/" + versionId + "?scoringModelId=1")))
-                .andExpect(jsonPath("$.finalScore").value(30))
+                .andExpect(jsonPath("$.finalScore").value(34))
                 .andExpect(jsonPath("$.recommendationLevel").value("NOT_RECOMMENDED"))
                 .andExpect(jsonPath("$.riskLevel").value("MEDIUM"))
                 .andExpect(jsonPath("$.compatibilityPercentage").value(25.0))
                 .andExpect(jsonPath("$.ingredientCount").value(1))
                 .andExpect(jsonPath("$.unevaluatedIngredientCount").value(1))
-                .andExpect(jsonPath("$.breakdown.qualityScore").value(40))
-                .andExpect(jsonPath("$.breakdown.qualityPoints").value(14.2))
+                .andExpect(jsonPath("$.breakdown.qualityScore").value(50))
+                .andExpect(jsonPath("$.breakdown.qualityPoints").value(17.5))
                 .andExpect(jsonPath("$.breakdown.profilePoints").value(16.3))
                 .andExpect(jsonPath("$.breakdown.healthScore").value(nullValue()))
                 .andExpect(jsonPath("$.breakdown.ethicalScore").value(50))
-                .andExpect(jsonPath("$.breakdown.performanceScore").value(33))
+                .andExpect(jsonPath("$.breakdown.performanceScore").value(nullValue()))
                 .andExpect(jsonPath("$.reasons[0].text").value(NIACINAMIDE_REASON))
-                .andExpect(jsonPath("$.summary").value("Nota 30 de 100 - Não recomendado. " + NIACINAMIDE_REASON));
+                .andExpect(jsonPath("$.summary").value("Nota 34 de 100 - Não recomendado. " + NIACINAMIDE_REASON));
 
         assertThat(countByUser("analysis_results", userId)).isEqualTo(1);
         assertThat(countByUser("personalized_scores", userId)).isEqualTo(1);
@@ -142,7 +142,7 @@ class ClassificationApiIntegrationTest {
                 .andExpect(jsonPath("$.userId").value(userId))
                 .andExpect(jsonPath("$.productVersionId").value(versionId))
                 .andExpect(jsonPath("$.scoringModelId").value(1))
-                .andExpect(jsonPath("$.finalScore").value(30))
+                .andExpect(jsonPath("$.finalScore").value(34))
                 .andExpect(jsonPath("$.recommendationLevel").value("NOT_RECOMMENDED"))
                 .andExpect(jsonPath("$.riskLevel").value("MEDIUM"))
                 .andExpect(jsonPath("$.compatibilityPercentage").value(25.0))
@@ -152,7 +152,7 @@ class ClassificationApiIntegrationTest {
                 .andExpect(jsonPath("$.breakdown.qualityPoints").value(nullValue()))
                 .andExpect(jsonPath("$.breakdown.profilePoints").value(nullValue()))
                 .andExpect(jsonPath("$.breakdown.ethicalScore").value(50))
-                .andExpect(jsonPath("$.breakdown.performanceScore").value(33))
+                .andExpect(jsonPath("$.breakdown.performanceScore").value(nullValue()))
                 .andExpect(jsonPath("$.reasons.length()").value(1))
                 .andExpect(jsonPath("$.reasons[0].source").value("INGREDIENT_RULE"))
                 .andExpect(jsonPath("$.reasons[0].text").value(NIACINAMIDE_REASON))
@@ -160,7 +160,7 @@ class ClassificationApiIntegrationTest {
                 .andExpect(jsonPath("$.reasons[0].impact").value(5.0))
                 .andExpect(jsonPath("$.reasons[0].ingredientName").value("Niacinamida"))
                 .andExpect(jsonPath("$.reasons[0].profileTagSlug").value("pele-acneica"))
-                .andExpect(jsonPath("$.summary").value("Nota 30 de 100 - Não recomendado. " + NIACINAMIDE_REASON))
+                .andExpect(jsonPath("$.summary").value("Nota 34 de 100 - Não recomendado. " + NIACINAMIDE_REASON))
                 .andExpect(jsonPath("$.calculatedAt").exists());
     }
 
@@ -213,7 +213,7 @@ class ClassificationApiIntegrationTest {
         mockMvc.perform(get(BY_PRODUCT, userId, productIdOf("serum-niacinamida")).with(appUser("uid-get-produto")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.productVersionId").value(versionId))
-                .andExpect(jsonPath("$.finalScore").value(30));
+                .andExpect(jsonPath("$.finalScore").value(34));
     }
 
     @Test
