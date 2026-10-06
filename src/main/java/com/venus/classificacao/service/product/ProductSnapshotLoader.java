@@ -189,7 +189,8 @@ public class ProductSnapshotLoader {
                 Boolean.TRUE.equals(packaging.getIsRecyclable()),
                 Boolean.TRUE.equals(packaging.getIsRefillable()),
                 Boolean.TRUE.equals(packaging.getIsBiodegradable()),
-                packaging.getRecycledContentPercentage());
+                packaging.getRecycledContentPercentage(),
+                isEvaluated(packaging));
     }
 
     private ProductSnapshot.RuleData toRuleData(CompatibilityRule rule) {
@@ -216,6 +217,10 @@ public class ProductSnapshotLoader {
 
     private boolean isEvaluated(Ingredient ingredient) {
         return ingredient.getScientificConfidence() > 0;
+    }
+
+    private boolean isEvaluated(Packaging packaging) {
+        return packaging.getConfidenceScore() > 0;
     }
 
     private <T> T executeOrFail(Supplier<T> action, String errorMessage) {

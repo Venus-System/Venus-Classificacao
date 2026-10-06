@@ -61,7 +61,7 @@ Todos ficam na organização [Venus-System](https://github.com/Venus-System).
 A API recebe o usuário e a versão do produto e devolve a nota, a faixa de recomendação, o nível de risco e os motivos. A conta tem três partes.
 
 **1. Nota de qualidade (0 a 100)**
-É a média de quatro notas do produto, cada uma com um peso: saúde (35), desempenho (20), ambiental (15) e ético (15). O modelo de score pode reforçar ou aliviar esses pesos pelas categorias dele. Essa nota não depende de quem está analisando.
+É a média de quatro notas do produto, cada uma com um peso: saúde (35), desempenho (20), ambiental (15) e ético (15). O modelo de score pode reforçar ou aliviar esses pesos pelas categorias dele. Saúde e desempenho só usam ingredientes avaliados (`scientific_confidence` maior que 0), e a embalagem só entra no ambiental quando tem `confidence_score` maior que 0. Nota sem nenhum dado avaliado fica `null` e sai da média, em vez de contar como 0. Essa nota não depende de quem está analisando.
 
 **2. Compatibilidade com o perfil (0 a 100%)**
 São 15 perguntas do perfil: tipo de pele, tendência a acne, rosácea, eczema, hiperpigmentação, melasma, tipo de couro cabeludo, gestação, amamentação, vegano, cruelty-free, sem parabeno, sem sulfato, sem silicone e outras preferências. Cada pergunta soma pontos pelas regras de compatibilidade que batem entre os ingredientes do produto e as etiquetas do usuário. Vegano e cruelty-free vêm da declaração da marca. Pergunta que o usuário não respondeu sai da conta.
