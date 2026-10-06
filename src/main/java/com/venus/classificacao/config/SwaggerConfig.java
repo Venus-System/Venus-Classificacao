@@ -33,11 +33,12 @@ public class SwaggerConfig {
     private String description() {
         return """
                 API de classificação do Venus System: calcula o score de um produto para o perfil do usuário, \
-                grava a análise e explica o porquê da nota.
+                grava a análise e explica o porquê da nota. O administrador também calcula a nota base do \
+                produto, sem perfil.
 
                 **Erros** — toda resposta de erro usa o mesmo corpo (`ErrorResponse`), com `timestamp`, \
                 `status`, `error`, `code`, `message`, `path` e `details`. O `code` só vem preenchido nos 404 e 422 \
-                da classificação e diz o motivo sem precisar ler a mensagem. O `details` só vem preenchido em erro \
+                da classificação e da nota base e diz o motivo sem precisar ler a mensagem. O `details` só vem preenchido em erro \
                 de validação, com uma linha por campo recusado.
 
                 **Autenticação** — todas as rotas exigem o cabeçalho `Authorization: Bearer <token>`, com um de dois \

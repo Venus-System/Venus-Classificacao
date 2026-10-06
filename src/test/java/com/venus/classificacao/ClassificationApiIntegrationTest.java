@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.venus.classificacao.security.SecurityRoles;
 import java.net.URI;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -87,6 +88,12 @@ class ClassificationApiIntegrationTest {
         assertThat(countByUser("analysis_results", userId)).isEqualTo(1);
         assertThat(countByUser("personalized_scores", userId)).isEqualTo(1);
         assertThat(countRuleEvaluations(userId)).isEqualTo(1);
+        assertThat(productScoreOf(versionId))
+                .containsEntry("overall_score", 50)
+                .containsEntry("health_score", null)
+                .containsEntry("environmental_score", null)
+                .containsEntry("ethical_score", 50)
+                .containsEntry("performance_score", null);
     }
 
     @Test
@@ -276,6 +283,12 @@ class ClassificationApiIntegrationTest {
     private long personalizedScoreAnalysisId(long userId) {
         return jdbcTemplate.queryForObject("SELECT fk_analysis_result_id FROM venus.personalized_scores "
                 + "WHERE fk_user_id = ?", Long.class, userId);
+    }
+
+    private Map<String, Object> productScoreOf(long versionId) {
+        return jdbcTemplate.queryForMap("SELECT overall_score, health_score, environmental_score, ethical_score, "
+                + "performance_score FROM venus.product_scores WHERE fk_product_version_id = ? AND fk_scoring_model_id = 1",
+                versionId);
     }
 
     private long latestAnalysisId(long userId) {

@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 class PreAuthorizeCoverageTest {
 
     private static final String CONTROLLER_PACKAGE = "com.venus.classificacao.controller";
-    private static final int CONTROLLERS = 1;
+    private static final int CONTROLLERS = 2;
 
     @Test
     void everyHandlerHasPreAuthorize() throws ClassNotFoundException {
