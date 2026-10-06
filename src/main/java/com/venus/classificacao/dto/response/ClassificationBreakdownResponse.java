@@ -16,12 +16,13 @@ public record ClassificationBreakdownResponse(
         @Schema(description = "Nota de saúde, de 0 a 100. Nula quando nenhum ingrediente tem avaliação.", example = "89",
                 nullable = true)
         Integer healthScore,
-        @Schema(description = "Nota ambiental, de 0 a 100. Nula sem avaliação de ingrediente e sem embalagem.",
+        @Schema(description = "Nota ambiental, de 0 a 100. Nula sem ingrediente avaliado e sem embalagem avaliada.",
                 example = "63", nullable = true)
         Integer environmentalScore,
         @Schema(description = "Nota ética, de 0 a 100.", example = "95")
         Integer ethicalScore,
-        @Schema(description = "Nota de desempenho, de 0 a 100.", example = "39")
+        @Schema(description = "Nota de desempenho, de 0 a 100. Nula quando nenhum ingrediente tem avaliação.",
+                example = "39", nullable = true)
         Integer performanceScore
 ) {
 }

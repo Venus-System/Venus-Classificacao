@@ -84,6 +84,9 @@ E a faixa sai da nota final: ideal a partir de 85, recomendado a partir de 70, a
 **O que é gravado**
 Cada classificação grava uma linha nova em `analysis_results` e em `personalized_scores`, uma linha em `rule_evaluations` para cada regra que bateu, e atualiza a nota de qualidade da versão em `product_scores`. O histórico acumula: nada é sobrescrito, a não ser a nota do produto.
 
+**Nota base**
+É a nota de qualidade sozinha, sem perfil, gravada em `product_scores` por versão e modelo. Além de sair junto da classificação, o admin calcula ela direto: por versão, no fim do cadastro de um produto, ou para a versão atual de todos os produtos de uma vez. A conta é a mesma da parte 1. Para ler as notas gravadas, o painel usa o `GET /api/product-scores` do Venus-CRUD.
+
 **Quando a API recusa**
 Os 404 e os 422 trazem um `code` que diz o motivo sem precisar ler a mensagem:
 
@@ -107,7 +110,7 @@ Venus-Classificacao/
 │   └── main/
 │       ├── java/com/venus/classificacao/
 │       │   ├── config/            # Segurança, Swagger, JPA, MapStruct, propriedades do .env
-│       │   ├── controller/        # Rota da classificação
+│       │   ├── controller/        # Rotas da classificação e da nota base
 │       │   ├── dto/
 │       │   │   ├── request/       # Corpo do POST
 │       │   │   └── response/      # O que a API devolve
@@ -123,7 +126,8 @@ Venus-Classificacao/
 │       │       ├── question/      # Uma classe por pergunta do perfil
 │       │       ├── verdict/       # Soma, alergias, travas e faixa
 │       │       ├── explanation/   # Motivos e resumo
-│       │       └── recording/     # Grava o resultado no banco
+│       │       ├── recording/     # Grava o resultado no banco
+│       │       └── basescore/     # Nota base: calcula e grava uma versão por vez
 │       └── resources/
 │           └── application.yml    # Toda configuração vem de variável de ambiente
 ├── .env.example                   # Modelo das variáveis de ambiente
@@ -181,6 +185,7 @@ A API identifica o token pelo emissor (`iss`). O do Firebase é validado com as 
 |---|---|
 | Swagger | livre |
 | `POST /api/classifications` | o dono do `userId`, com a conta ativa, ou `ADMIN` |
+| `POST /api/base-scores` e `POST /api/base-scores/product-version/{versionId}` | só `ADMIN` |
 
 "Dono" quer dizer que o usuário do token do Firebase é o mesmo `userId` do corpo, com a conta `ACTIVE` ou `PENDING`. A checagem fica no `OwnershipGuard`, chamado pelo `@PreAuthorize` da rota. O admin com papel `ADMIN` passa por essa checagem; `MODERATOR` e `ANALYST` recebem 403.
 
@@ -270,6 +275,8 @@ A rota mostra no Swagger os erros possíveis (400, 401, 403, 404, 422…).
 | `POST /api/classifications` | dono ou `ADMIN` | Calcula, grava e devolve a nota do produto para o perfil do usuário |
 | `GET /api/classifications/user/{userId}/product-version/{versionId}` | dono ou `ADMIN` | Devolve a última análise salva daquela versão |
 | `GET /api/classifications/user/{userId}/product/{productId}` | dono ou `ADMIN` | Acha a versão atual do produto e devolve a última análise salva dela |
+| `POST /api/base-scores/product-version/{versionId}` | `ADMIN` | Calcula, grava e devolve a nota base de uma versão |
+| `POST /api/base-scores` | `ADMIN` | Calcula e grava a nota base da versão atual de todos os produtos e devolve um resumo |
 
 Corpo:
 
@@ -296,6 +303,17 @@ e o resumo. Os campos que só existem na hora do cálculo (`qualityScore`, `qual
 Cada usuário tem um score pessoal por versão e modelo: o `POST` seguinte atualiza esse score e guarda a análise nova
 no histórico.
 
+**Nota base.** As duas rotas não têm corpo, e o `scoringModelId` vai opcional na query. As duas respondem 200, porque
+a nota da versão é atualizada quando já existe.
+
+- Por versão: o painel chama no **fim** do cadastro do produto, depois dos ingredientes e da embalagem. Antes dos
+  ingredientes volta 422 `NO_INGREDIENTS`; antes da embalagem, o ambiental sai sem ela. Vale também para uma versão
+  que ainda não é a atual. A resposta traz a nota base, as quatro notas e quantos ingredientes ainda não têm
+  avaliação, que é o que explica uma nota nula.
+- Todos: passa pela versão atual de cada produto. Versão em revisão ou sem ingrediente é pulada e aparece em
+  `skipped`, com o `code`. A resposta traz só o resumo (total, quantas foram gravadas, as puladas e o tempo). Com o
+  catálogo grande o request demora; se cair no meio, o que já foi gravado fica e é só chamar de novo.
+
 ## Testes
 
 ```bash
@@ -308,8 +326,9 @@ pequena (`src/test/resources/venus-banco/`). Sem Docker, ele é pulado.
 | Tipo | Onde | O que cobre |
 |---|---|---|
 | Unitário | `service/**` | as quatro notas, os pesos, as perguntas, as travas, a cascata de regras e os motivos |
-| Segurança | `ClassificationControllerSecurityTest`, `OwnershipGuardTest`, `PreAuthorizeCoverageTest` | 401, 403, o admin e o `@PreAuthorize` em toda rota |
+| Segurança | `ClassificationControllerSecurityTest`, `BaseScoreControllerSecurityTest`, `OwnershipGuardTest`, `PreAuthorizeCoverageTest` | 401, 403, o admin e o `@PreAuthorize` em toda rota |
 | Integração | `ClassificationApiIntegrationTest` | o `POST` gravando, o segundo `POST` igual, os dois `GET` e os 404 e 422 |
+| Integração | `BaseScoreApiIntegrationTest` | a nota base por versão e de todos gravando em `product_scores`, as versões puladas, os 404 e 422 e o Swagger das duas rotas |
 
 O `01_users_email_password_hash.sql` do teste cobre duas colunas que já estão no banco e ainda não estão no `00_schema.sql` do Venus-Banco. Quando o Venus-Banco mudar o schema, copiar o `sql/00_schema.sql` de lá por cima do arquivo do teste e apagar o `01` se as colunas já estiverem nele.
 
