@@ -44,7 +44,7 @@ public class ProductScore extends AuditableEntity {
     @Column(name = "ethical_score", nullable = false)
     private Integer ethicalScore;
 
-    @Column(name = "performance_score", nullable = false)
+    @Column(name = "performance_score")
     private Integer performanceScore;
 
     @Column(name = "transparency_score")
