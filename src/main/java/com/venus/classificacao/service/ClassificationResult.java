@@ -7,7 +7,7 @@ import com.venus.classificacao.entity.enums.RiskLevel;
 import com.venus.classificacao.service.explanation.Explanation;
 import com.venus.classificacao.service.explanation.Reason;
 import com.venus.classificacao.service.quality.QualityResult;
-import com.venus.classificacao.service.quality.ScoreBucket;
+import com.venus.classificacao.service.quality.QualityScores;
 import com.venus.classificacao.service.question.ProfileResult;
 import com.venus.classificacao.service.verdict.CombinedScore;
 import com.venus.classificacao.service.verdict.Evaluation;
@@ -86,24 +86,21 @@ public record ClassificationResult(
     ) {
 
         static Breakdown of(QualityResult qualityResult, CombinedScore combinedScore) {
+            QualityScores scores = QualityScores.of(qualityResult);
             OptionalDouble profilePoints = combinedScore.profilePoints();
 
             return new Breakdown(
-                    (int) Math.round(qualityResult.qualityScore()),
+                    scores.qualityScore(),
                     roundedPoints(combinedScore.qualityPoints()),
                     profilePoints.isPresent() ? roundedPoints(profilePoints.getAsDouble()) : null,
-                    roundedScore(qualityResult.scoreOf(ScoreBucket.HEALTH)),
-                    roundedScore(qualityResult.scoreOf(ScoreBucket.ENVIRONMENTAL)),
-                    roundedScore(qualityResult.scoreOf(ScoreBucket.ETHICAL)),
-                    roundedScore(qualityResult.scoreOf(ScoreBucket.PERFORMANCE)));
+                    scores.healthScore(),
+                    scores.environmentalScore(),
+                    scores.ethicalScore(),
+                    scores.performanceScore());
         }
 
         private static BigDecimal roundedPoints(double points) {
             return BigDecimal.valueOf(points).setScale(POINTS_DECIMALS, RoundingMode.HALF_UP);
-        }
-
-        private static Integer roundedScore(OptionalDouble score) {
-            return score.isPresent() ? (int) Math.round(score.getAsDouble()) : null;
         }
     }
 }
