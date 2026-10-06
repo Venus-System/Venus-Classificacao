@@ -7,7 +7,6 @@ import com.venus.classificacao.entity.product.ProductVersion;
 import com.venus.classificacao.entity.scan.AnalysisResult;
 import com.venus.classificacao.entity.scan.PersonalizedScore;
 import com.venus.classificacao.entity.scan.RuleEvaluation;
-import com.venus.classificacao.entity.scoring.ProductScore;
 import com.venus.classificacao.entity.scoring.ScoringModel;
 import com.venus.classificacao.entity.shared.ProfileTag;
 import com.venus.classificacao.entity.user.User;
@@ -16,8 +15,8 @@ import com.venus.classificacao.exception.DataIntegrityViolationTranslator;
 import com.venus.classificacao.repository.scan.AnalysisResultRepository;
 import com.venus.classificacao.repository.scan.PersonalizedScoreRepository;
 import com.venus.classificacao.repository.scan.RuleEvaluationRepository;
-import com.venus.classificacao.repository.scoring.ProductScoreRepository;
 import com.venus.classificacao.service.ClassificationResult;
+import com.venus.classificacao.service.quality.QualityScores;
 import com.venus.classificacao.service.question.MatchedRule;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
@@ -39,18 +38,18 @@ public class ClassificationRecorder {
     private final AnalysisResultRepository analysisResultRepository;
     private final PersonalizedScoreRepository personalizedScoreRepository;
     private final RuleEvaluationRepository ruleEvaluationRepository;
-    private final ProductScoreRepository productScoreRepository;
+    private final ProductScoreRecorder productScoreRecorder;
 
     public ClassificationRecorder(EntityManager entityManager,
             AnalysisResultRepository analysisResultRepository,
             PersonalizedScoreRepository personalizedScoreRepository,
             RuleEvaluationRepository ruleEvaluationRepository,
-            ProductScoreRepository productScoreRepository) {
+            ProductScoreRecorder productScoreRecorder) {
         this.entityManager = entityManager;
         this.analysisResultRepository = analysisResultRepository;
         this.personalizedScoreRepository = personalizedScoreRepository;
         this.ruleEvaluationRepository = ruleEvaluationRepository;
-        this.productScoreRepository = productScoreRepository;
+        this.productScoreRecorder = productScoreRecorder;
     }
 
     public void record(ClassificationResult result, List<MatchedRule> matchedRules) {
@@ -72,9 +71,8 @@ public class ClassificationRecorder {
         executeOrFail(() -> ruleEvaluationRepository.saveAll(ruleEvaluations),
                 "Falha ao criar avaliacao de regra no banco de dados");
 
-        ProductScore productScore = updatedProductScore(result, version, model);
-        executeOrFail(() -> productScoreRepository.save(productScore),
-                "Falha ao atualizar score de produto no banco de dados");
+        productScoreRecorder.record(result.productVersionId(), result.scoringModelId(),
+                qualityScoresOf(result.breakdown()), result.calculatedAt());
 
         executeOrFail(() -> {
             entityManager.flush();
@@ -141,29 +139,9 @@ public class ClassificationRecorder {
         return evaluation;
     }
 
-    private ProductScore updatedProductScore(ClassificationResult result, ProductVersion version, ScoringModel model) {
-        Optional<ProductScore> currentProductScore = executeOrFail(() -> productScoreRepository
-                        .findByProductVersionIdAndScoringModelId(result.productVersionId(), result.scoringModelId()),
-                "Falha ao consultar score de produto no banco de dados");
-
-        ProductScore productScore = currentProductScore.orElseGet(() -> newProductScore(version, model));
-        ClassificationResult.Breakdown breakdown = result.breakdown();
-        productScore.setOverallScore(breakdown.qualityScore());
-        productScore.setHealthScore(breakdown.healthScore());
-        productScore.setEnvironmentalScore(breakdown.environmentalScore());
-        productScore.setEthicalScore(breakdown.ethicalScore());
-        productScore.setPerformanceScore(breakdown.performanceScore());
-        productScore.setTransparencyScore(null);
-        productScore.setConfidenceScore(null);
-        productScore.setCalculatedAt(result.calculatedAt());
-        return productScore;
-    }
-
-    private ProductScore newProductScore(ProductVersion version, ScoringModel model) {
-        ProductScore productScore = new ProductScore();
-        productScore.setProductVersion(version);
-        productScore.setScoringModel(model);
-        return productScore;
+    private QualityScores qualityScoresOf(ClassificationResult.Breakdown breakdown) {
+        return new QualityScores(breakdown.qualityScore(), breakdown.healthScore(), breakdown.environmentalScore(),
+                breakdown.ethicalScore(), breakdown.performanceScore());
     }
 
     private <T> T executeOrFail(Supplier<T> action, String errorMessage) {
