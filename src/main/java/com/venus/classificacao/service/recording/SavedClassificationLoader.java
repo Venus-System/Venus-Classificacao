@@ -1,5 +1,6 @@
 package com.venus.classificacao.service.recording;
 
+import com.venus.classificacao.config.CacheConfig;
 import com.venus.classificacao.entity.ingredient.CompatibilityRule;
 import com.venus.classificacao.entity.ingredient.Ingredient;
 import com.venus.classificacao.entity.scan.AnalysisResult;
@@ -21,6 +22,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
@@ -44,6 +46,9 @@ public class SavedClassificationLoader {
         this.explanationBuilder = explanationBuilder;
     }
 
+    @Cacheable(cacheNames = CacheConfig.CLASSIFICATIONS_CACHE,
+            key = "#target.userId() + ':' + #target.productVersionId() + ':' + #target.scoringModelId()",
+            unless = "#result == null")
     public Optional<ClassificationResult> load(ClassificationTarget target) {
         Optional<PersonalizedScore> personalizedScore = executeOrFail(() -> personalizedScoreRepository
                         .findByUserIdAndProductVersionIdAndScoringModelId(target.userId(), target.productVersionId(),
