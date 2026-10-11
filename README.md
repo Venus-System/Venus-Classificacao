@@ -50,10 +50,11 @@ Todos ficam na organização [Venus-System](https://github.com/Venus-System).
 | Spring Boot | 3.3.4 | Web, Data JPA, Validation |
 | Spring Security + OAuth2 Resource Server | do Boot | Validação dos tokens do Firebase e do admin |
 | PostgreSQL | 16 | Banco relacional (schema `venus`, o mesmo do Venus-CRUD) |
+| Redis (Spring Data Redis + Spring Cache) | do Boot | Cache da análise salva nos `GET` |
 | MapStruct | 1.5.5.Final | Conversão do resultado para DTO |
 | Lombok | do Boot | Getters, setters e construtores das entities |
 | springdoc-openapi | 2.6.0 | Swagger UI |
-| Testcontainers | do Boot | Teste de integração com Postgres real |
+| Testcontainers | do Boot | Teste de integração com Postgres e Redis reais |
 | Maven Wrapper | — | Build (`./mvnw`) |
 
 ## O que a API faz
@@ -84,6 +85,9 @@ E a faixa sai da nota final: ideal a partir de 85, recomendado a partir de 70, a
 **O que é gravado**
 Cada classificação grava uma linha nova em `analysis_results` e em `personalized_scores`, uma linha em `rule_evaluations` para cada regra que bateu, e atualiza a nota de qualidade da versão em `product_scores`. O histórico acumula: nada é sobrescrito, a não ser a nota do produto.
 
+**Cache da análise salva**
+Os dois `GET` da classificação guardam a análise salva no Redis por 6 horas, com a chave `classificacoes::{usuário}:{versão}:{modelo}` (ex.: `classificacoes::42:7:1`). Um `POST` novo do mesmo usuário, versão e modelo apaga essa chave, e o `GET` seguinte lê do banco de novo. O 404 não vai para o cache. Se o Redis estiver fora do ar, a API responde pelo banco e só registra um aviso no log. Uma análise mudada direto no banco ou pelo Venus-CRUD só aparece aqui quando a chave vence.
+
 **Nota base**
 É a nota de qualidade sozinha, sem perfil, gravada em `product_scores` por versão e modelo. Além de sair junto da classificação, o admin calcula ela direto: por versão, no fim do cadastro de um produto, ou para a versão atual de todos os produtos de uma vez. A conta é a mesma da parte 1. Para ler as notas gravadas, o painel usa o `GET /api/product-scores` do Venus-CRUD.
 
@@ -109,7 +113,7 @@ Venus-Classificacao/
 ├── src/
 │   └── main/
 │       ├── java/com/venus/classificacao/
-│       │   ├── config/            # Segurança, Swagger, JPA, MapStruct, propriedades do .env
+│       │   ├── config/            # Segurança, Swagger, JPA, cache, MapStruct, propriedades do .env
 │       │   ├── controller/        # Rotas da classificação e da nota base
 │       │   ├── dto/
 │       │   │   ├── request/       # Corpo do POST
@@ -195,6 +199,7 @@ A API identifica o token pelo emissor (`iss`). O do Firebase é validado com as 
 
 - JDK 21
 - Acesso a um PostgreSQL com o schema `venus` criado pelo repositório **Venus-Banco**
+- Acesso ao Redis do time, para o cache. Se ele estiver fora do ar, a API continua respondendo pelo banco, só sem cache
 - Docker, opcional: para o `docker-compose` e para a imagem da API
 
 ### 1. Clonar
@@ -218,11 +223,13 @@ Preencha o `.env`. O Spring **não lê o `.env` sozinho**: carregue as variávei
 | `SERVER_PORT` | Porta HTTP da API (padrão `8080`) |
 | `DB_HOST`, `DB_PORT`, `DB_NAME` | Endereço do PostgreSQL |
 | `DB_USERNAME`, `DB_PASSWORD` | Usuário e senha do PostgreSQL |
+| `REDIS_HOST`, `REDIS_PORT` | Endereço do Redis do cache |
+| `REDIS_USERNAME`, `REDIS_PASSWORD` | Usuário e senha do Redis |
 | `ADMIN_JWT_SECRET` | Segredo do token do admin. Tem que ser **o mesmo do Venus-CRUD** e ter **no mínimo 32 bytes**, senão a API não sobe |
 | `FIREBASE_PROJECT_ID` | Projeto do Firebase que emite o token do app |
 | `SCORING_BASE_MODEL_ID` | Id do modelo de score base. Quando o modelo pedido não tem regra para um efeito, vale a regra do modelo base |
 
-Para as credenciais do banco e o segredo do admin, fale com o time.
+Para as credenciais do banco e do Redis e o segredo do admin, fale com o time.
 
 ### 3. Banco de dados
 
@@ -321,13 +328,14 @@ a nota da versão é atualizada quando já existe.
 ```
 
 Precisa do Docker aberto: o teste de integração sobe um Postgres 16 com o `00_schema.sql` do Venus-Banco e uma seed
-pequena (`src/test/resources/venus-banco/`). Sem Docker, ele é pulado.
+pequena (`src/test/resources/venus-banco/`), e um Redis 7.4 para o cache. Sem Docker, ele é pulado.
 
 | Tipo | Onde | O que cobre |
 |---|---|---|
 | Unitário | `service/**` | as quatro notas, os pesos, as perguntas, as travas, a cascata de regras e os motivos |
 | Segurança | `ClassificationControllerSecurityTest`, `BaseScoreControllerSecurityTest`, `OwnershipGuardTest`, `PreAuthorizeCoverageTest` | 401, 403, o admin e o `@PreAuthorize` em toda rota |
-| Integração | `ClassificationApiIntegrationTest` | o `POST` gravando, o segundo `POST` igual, os dois `GET` e os 404 e 422 |
+| Integração | `ClassificationApiIntegrationTest` | o `POST` gravando, o segundo `POST` igual, os dois `GET`, os 404 e 422 e o cache dos `GET` no Redis |
+| Integração | `ClassificationRedisDownIntegrationTest` | o `POST` e o `GET` respondendo pelo banco com o Redis fora do ar |
 | Integração | `BaseScoreApiIntegrationTest` | a nota base por versão e de todos gravando em `product_scores`, as versões puladas, os 404 e 422 e o Swagger das duas rotas |
 
 O `01_users_email_password_hash.sql` do teste cobre duas colunas que já estão no banco e ainda não estão no `00_schema.sql` do Venus-Banco. Quando o Venus-Banco mudar o schema, copiar o `sql/00_schema.sql` de lá por cima do arquivo do teste e apagar o `01` se as colunas já estiverem nele.
