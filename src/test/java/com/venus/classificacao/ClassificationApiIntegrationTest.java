@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import com.venus.classificacao.security.SecurityRoles;
 import java.net.URI;
 import java.util.Map;
@@ -18,12 +19,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -33,7 +36,8 @@ import org.testcontainers.utility.MountableFile;
         "server.port=0",
         "venus.security.admin-token.secret=segredo-de-teste-com-mais-de-32-bytes!!",
         "venus.security.firebase.project-id=venus-81bac",
-        "venus.scoring.base-model-id=1"
+        "venus.scoring.base-model-id=1",
+        "spring.data.redis.port=6379"
 })
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
@@ -42,6 +46,7 @@ class ClassificationApiIntegrationTest {
     private static final String NIACINAMIDE_REASON = "Niacinamida ajuda a pele com acne.";
     private static final String BY_PRODUCT = "/api/classifications/user/{userId}/product/{productId}";
     private static final String BY_VERSION = "/api/classifications/user/{userId}/product-version/{versionId}";
+    private static final String CACHE_KEY = "classificacoes::%d:%d:1";
 
     @Container
     @ServiceConnection
@@ -55,11 +60,18 @@ class ClassificationApiIntegrationTest {
             .withCopyFileToContainer(MountableFile.forClasspathResource("venus-banco/02_seed_classificacao.sql"),
                     "/docker-entrypoint-initdb.d/02_seed_classificacao.sql");
 
+    @Container
+    @ServiceConnection(name = "redis")
+    static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7.4-alpine").withExposedPorts(6379);
+
     @Autowired
     private MockMvc mockMvc;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
 
     @Test
     void postCalculatesTheScoreAndRecordsTheAnalysis() throws Exception {
@@ -240,6 +252,78 @@ class ClassificationApiIntegrationTest {
         mockMvc.perform(get(BY_PRODUCT, userId, 999999L).with(appUser("uid-produto-inexistente")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
+    }
+
+    @Test
+    void getSavesInCache() throws Exception {
+        long userId = insertAcneProneUser("uid-get-duas-vezes");
+        long versionId = versionIdOf("niacinamida-v1");
+        postClassification("uid-get-duas-vezes", userId, versionId).andExpect(status().isCreated());
+
+        String firstBody = getBody("uid-get-duas-vezes", userId, versionId);
+        String secondBody = getBody("uid-get-duas-vezes", userId, versionId);
+
+        assertThat(secondBody).isEqualTo(firstBody);
+        assertThat(redisTemplate.hasKey(cacheKeyOf(userId, versionId))).isTrue();
+    }
+
+    @Test
+    void getReadsFromCache() throws Exception {
+        long userId = insertAcneProneUser("uid-cache-vence-banco");
+        long versionId = versionIdOf("niacinamida-v1");
+        postClassification("uid-cache-vence-banco", userId, versionId).andExpect(status().isCreated());
+        getBody("uid-cache-vence-banco", userId, versionId);
+
+        updateFinalScore(userId, 99);
+
+        mockMvc.perform(get(BY_VERSION, userId, versionId).with(appUser("uid-cache-vence-banco")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.finalScore").value(34));
+    }
+
+    @Test
+    void postClearsCache() throws Exception {
+        long userId = insertAcneProneUser("uid-post-limpa-cache");
+        long versionId = versionIdOf("niacinamida-v1");
+        postClassification("uid-post-limpa-cache", userId, versionId).andExpect(status().isCreated());
+        String firstDate = calculatedAtOf(getBody("uid-post-limpa-cache", userId, versionId));
+
+        postClassification("uid-post-limpa-cache", userId, versionId).andExpect(status().isCreated());
+
+        assertThat(redisTemplate.hasKey(cacheKeyOf(userId, versionId))).isFalse();
+
+        String secondDate = calculatedAtOf(getBody("uid-post-limpa-cache", userId, versionId));
+        assertThat(secondDate).isNotEqualTo(firstDate);
+    }
+
+    @Test
+    void notFoundHasNoKey() throws Exception {
+        long userId = insertAcneProneUser("uid-404-sem-cache");
+        long versionId = versionIdOf("niacinamida-v1");
+
+        mockMvc.perform(get(BY_VERSION, userId, versionId).with(appUser("uid-404-sem-cache")))
+                .andExpect(status().isNotFound());
+
+        assertThat(redisTemplate.hasKey(cacheKeyOf(userId, versionId))).isFalse();
+    }
+
+    private String getBody(String firebaseUid, long userId, long versionId) throws Exception {
+        return mockMvc.perform(get(BY_VERSION, userId, versionId).with(appUser(firebaseUid)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+    }
+
+    private static String calculatedAtOf(String body) {
+        return JsonPath.read(body, "$.calculatedAt");
+    }
+
+    private static String cacheKeyOf(long userId, long versionId) {
+        return CACHE_KEY.formatted(userId, versionId);
+    }
+
+    private void updateFinalScore(long userId, int finalScore) {
+        jdbcTemplate.update("UPDATE venus.personalized_scores SET final_score = ? WHERE fk_user_id = ?",
+                finalScore, userId);
     }
 
     private long productIdOf(String slug) {
