@@ -1,5 +1,6 @@
 package com.venus.classificacao.service;
 
+import com.venus.classificacao.config.CacheConfig;
 import com.venus.classificacao.dto.request.ClassificationRequest;
 import com.venus.classificacao.dto.response.ClassificationResponse;
 import com.venus.classificacao.entity.scoring.ScoringModel;
@@ -18,6 +19,7 @@ import com.venus.classificacao.service.verdict.Evaluation;
 import com.venus.classificacao.service.verdict.PersonalizedScoreCalculator;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +54,8 @@ public class ClassificationService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = CacheConfig.CLASSIFICATIONS_CACHE,
+            key = "#result.userId() + ':' + #result.productVersionId() + ':' + #result.scoringModelId()")
     public ClassificationResponse classify(ClassificationRequest request) {
         ClassificationResult result = classifyAndRecord(request.userId(), request.productVersionId(),
                 request.scoringModelId());

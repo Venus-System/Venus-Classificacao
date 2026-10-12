@@ -26,6 +26,20 @@ spring:
     show-sql: false
     open-in-view: false
 
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      username: ${REDIS_USERNAME}
+      password: ${REDIS_PASSWORD}
+      timeout: 1s
+      connect-timeout: 1s
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 6h
+
 springdoc:
   api-docs:
     path: /v3/api-docs

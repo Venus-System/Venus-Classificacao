@@ -31,7 +31,9 @@ import org.testcontainers.utility.MountableFile;
         "server.port=0",
         "venus.security.admin-token.secret=segredo-de-teste-com-mais-de-32-bytes!!",
         "venus.security.firebase.project-id=venus-81bac",
-        "venus.scoring.base-model-id=1"
+        "venus.scoring.base-model-id=1",
+        "spring.cache.type=none",
+        "spring.data.redis.port=6379"
 })
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
