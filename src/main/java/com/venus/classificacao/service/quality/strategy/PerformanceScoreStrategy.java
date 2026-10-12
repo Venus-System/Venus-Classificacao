@@ -19,7 +19,7 @@ public class PerformanceScoreStrategy implements BucketScoreStrategy {
 
     @Override
     public OptionalDouble score(ProductSnapshot product) {
-        OptionalDouble averageBenefitCount = product.evaluatedIngredients().stream()
+        OptionalDouble averageBenefitCount = product.evaluatedIngredientsWithEffect().stream()
                 .mapToInt(ingredient -> cappedBenefitCountOf(product, ingredient))
                 .average();
 
