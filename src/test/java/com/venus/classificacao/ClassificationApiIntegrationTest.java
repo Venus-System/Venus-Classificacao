@@ -40,6 +40,8 @@ import org.testcontainers.utility.MountableFile;
 class ClassificationApiIntegrationTest {
 
     private static final String NIACINAMIDE_REASON = "Niacinamida ajuda a pele com acne.";
+    private static final String VEGAN_UNKNOWN_REASON =
+            "A marca não informa se é vegana, então essa preferência não entrou na nota.";
     private static final String BY_PRODUCT = "/api/classifications/user/{userId}/product/{productId}";
     private static final String BY_VERSION = "/api/classifications/user/{userId}/product-version/{versionId}";
 
@@ -94,6 +96,17 @@ class ClassificationApiIntegrationTest {
                 .containsEntry("environmental_score", null)
                 .containsEntry("ethical_score", 50)
                 .containsEntry("performance_score", null);
+    }
+
+    @Test
+    void veganWithoutBrandInfoKeepsScore() throws Exception {
+        long userId = insertAcneProneUser("uid-vegano-sem-dado");
+        jdbcTemplate.update("INSERT INTO venus.user_preferences (fk_user_id, prefer_vegan) VALUES (?, TRUE)", userId);
+
+        postClassification("uid-vegano-sem-dado", userId, versionIdOf("niacinamida-v1"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.finalScore").value(34))
+                .andExpect(jsonPath("$.reasons[0].text").value(VEGAN_UNKNOWN_REASON));
     }
 
     @Test
