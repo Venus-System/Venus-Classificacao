@@ -1,5 +1,7 @@
 package com.venus.classificacao.service.quality.strategy;
 
+import static com.venus.classificacao.service.product.ProductSnapshot.ClaimStatus.DECLARED;
+import static com.venus.classificacao.service.product.ProductSnapshot.ClaimStatus.UNKNOWN;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
@@ -76,10 +78,17 @@ class BucketScoreStrategiesTest {
 
     @Test
     void ethicalStartsAtFiftyAndCapsTheSealsAtTenPoints() {
-        ProductSnapshot product = new ProductSnapshot(1L, new ProductSnapshot.BrandClaims(true, true),
+        ProductSnapshot product = new ProductSnapshot(1L, new ProductSnapshot.BrandClaims(DECLARED, DECLARED),
                 List.of(unevaluated(1L)), Optional.empty(), 3, Map.of(), Set.of(), List.of());
 
         assertThat(ethical.score(product).getAsDouble()).isEqualTo(100.0);
+    }
+
+    @Test
+    void ethicalStaysNeutralWithoutBrandInfo() {
+        ProductSnapshot product = product(List.of(unevaluated(1L)), Optional.empty());
+
+        assertThat(ethical.score(product).getAsDouble()).isEqualTo(50.0);
     }
 
     @Test
@@ -116,14 +125,14 @@ class BucketScoreStrategiesTest {
 
     private static ProductSnapshot product(List<ProductSnapshot.IngredientData> ingredients,
             Optional<ProductSnapshot.PackagingData> packaging) {
-        return new ProductSnapshot(1L, new ProductSnapshot.BrandClaims(false, false), ingredients, packaging, 0,
+        return new ProductSnapshot(1L, new ProductSnapshot.BrandClaims(UNKNOWN, UNKNOWN), ingredients, packaging, 0,
                 Map.of(), Set.of(), List.of());
     }
 
     private static ProductSnapshot productWithEffects(List<ProductSnapshot.IngredientData> ingredients,
             Map<Long, Integer> benefitCountByIngredientId, Set<Long> ingredientIdsWithEffect) {
-        return new ProductSnapshot(1L, new ProductSnapshot.BrandClaims(false, false), ingredients, Optional.empty(), 0,
-                benefitCountByIngredientId, ingredientIdsWithEffect, List.of());
+        return new ProductSnapshot(1L, new ProductSnapshot.BrandClaims(UNKNOWN, UNKNOWN), ingredients,
+                Optional.empty(), 0, benefitCountByIngredientId, ingredientIdsWithEffect, List.of());
     }
 
     private static ProductSnapshot.IngredientData evaluated(Long id, int irritationRisk, int comedogenicity,
