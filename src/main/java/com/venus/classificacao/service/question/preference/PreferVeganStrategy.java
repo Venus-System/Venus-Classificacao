@@ -17,6 +17,8 @@ public class PreferVeganStrategy implements ProfileQuestionStrategy {
             "A marca declara ser vegana, como você prefere.";
     private static final String NOT_DECLARED_NOTE =
             "A marca não declara ser vegana, e você prefere produtos veganos.";
+    private static final String UNKNOWN_NOTE =
+            "A marca não informa se é vegana, então essa preferência não entrou na nota.";
 
     @Override
     public Set<Long> activeTagIds(ProfileSnapshot profile) {
@@ -29,7 +31,12 @@ public class PreferVeganStrategy implements ProfileQuestionStrategy {
             return QuestionScore.notApplicable(KEY, MAX_POINTS);
         }
 
-        boolean declaredByBrand = product.brandClaims().vegan();
+        ProductSnapshot.ClaimStatus veganClaim = product.brandClaims().vegan();
+        if (veganClaim == ProductSnapshot.ClaimStatus.UNKNOWN) {
+            return QuestionScore.fromUnknownClaim(KEY, MAX_POINTS, UNKNOWN_NOTE);
+        }
+
+        boolean declaredByBrand = veganClaim == ProductSnapshot.ClaimStatus.DECLARED;
         String note = declaredByBrand ? DECLARED_NOTE : NOT_DECLARED_NOTE;
 
         return QuestionScore.fromBrandClaim(KEY, MAX_POINTS, declaredByBrand, note);

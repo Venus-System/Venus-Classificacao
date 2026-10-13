@@ -14,18 +14,26 @@ public record ProductSnapshot(
         Optional<PackagingData> packaging,
         int verifiedEthicalSealCount,
         Map<Long, Integer> benefitCountByIngredientId,
+        Set<Long> ingredientIdsWithEffect,
         List<RuleData> rules
 ) {
 
     public ProductSnapshot {
         ingredients = List.copyOf(ingredients);
         benefitCountByIngredientId = Map.copyOf(benefitCountByIngredientId);
+        ingredientIdsWithEffect = Set.copyOf(ingredientIdsWithEffect);
         rules = List.copyOf(rules);
     }
 
     public List<IngredientData> evaluatedIngredients() {
         return ingredients.stream()
                 .filter(IngredientData::evaluated)
+                .toList();
+    }
+
+    public List<IngredientData> evaluatedIngredientsWithEffect() {
+        return evaluatedIngredients().stream()
+                .filter(ingredient -> ingredientIdsWithEffect.contains(ingredient.id()))
                 .toList();
     }
 
@@ -47,7 +55,13 @@ public record ProductSnapshot(
                 .toList();
     }
 
-    public record BrandClaims(boolean vegan, boolean crueltyFree) {
+    public record BrandClaims(ClaimStatus vegan, ClaimStatus crueltyFree) {
+    }
+
+    public enum ClaimStatus {
+        DECLARED,
+        NOT_DECLARED,
+        UNKNOWN
     }
 
     public record IngredientData(

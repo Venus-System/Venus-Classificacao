@@ -19,7 +19,7 @@ public record BaseScoreResponse(
         Integer environmentalScore,
         @Schema(description = "Nota ética, de 0 a 100.", example = "95")
         Integer ethicalScore,
-        @Schema(description = "Nota de desempenho, de 0 a 100. Nula quando nenhum ingrediente tem avaliação.",
+        @Schema(description = "Nota de desempenho, de 0 a 100. Nula quando nenhum ingrediente avaliado tem efeito cadastrado.",
                 example = "39", nullable = true)
         Integer performanceScore,
         @Schema(description = "Quantos ingredientes a versão tem.", example = "18")

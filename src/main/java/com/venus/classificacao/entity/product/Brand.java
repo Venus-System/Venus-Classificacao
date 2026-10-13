@@ -28,10 +28,10 @@ public class Brand extends AuditableEntity {
     @Column(name = "website")
     private String website;
 
-    @Column(name = "has_cruelty_free_claim", nullable = false)
+    @Column(name = "has_cruelty_free_claim")
     private Boolean hasCrueltyFreeClaim;
 
-    @Column(name = "has_vegan_claim", nullable = false)
+    @Column(name = "has_vegan_claim")
     private Boolean hasVeganClaim;
 
     @Column(name = "is_brazilian", nullable = false)

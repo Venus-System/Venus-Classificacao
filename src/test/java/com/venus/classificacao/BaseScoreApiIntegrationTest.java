@@ -86,6 +86,20 @@ class BaseScoreApiIntegrationTest {
     }
 
     @Test
+    void performanceSkipsIngredientsWithoutEffect() throws Exception {
+        long versionId = insertOldVersion("desempenho-v1");
+        addIngredient(versionId, "GLYCERIN", 1);
+        addIngredient(versionId, "PANTHENOL", 2);
+        addIngredient(versionId, "AQUA", 3);
+        addEffect("GLYCERIN", "benefit");
+        addEffect("PANTHENOL", "neutral");
+
+        mockMvc.perform(post(BY_VERSION, versionId).with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.performanceScore").value(17));
+    }
+
+    @Test
     void postByVersionAcceptsAVersionThatIsNotCurrent() throws Exception {
         long versionId = versionIdOf("reformulado-v1");
 
@@ -166,6 +180,27 @@ class BaseScoreApiIntegrationTest {
 
     private String skippedCodeOf(String formulaSignature) {
         return "$.skipped[?(@.productVersionId == " + versionIdOf(formulaSignature) + ")].code";
+    }
+
+    private long insertOldVersion(String formulaSignature) {
+        return jdbcTemplate.queryForObject("INSERT INTO venus.product_versions (fk_product_id, version_name, "
+                + "display_name, status, is_current, formula_signature) "
+                + "SELECT product_id, 'v0', 'v0', 'verified', FALSE, ? FROM venus.products WHERE slug = 'serum-niacinamida' "
+                + "RETURNING product_version_id", Long.class, formulaSignature);
+    }
+
+    private void addIngredient(long versionId, String inciName, int position) {
+        jdbcTemplate.update("INSERT INTO venus.ingredients (fk_ingredient_category_id, inci_name, common_name, "
+                + "scientific_confidence) SELECT ingredient_category_id, ?, ?, 50 FROM venus.ingredient_categories "
+                + "WHERE name = 'Ativos'", inciName, inciName);
+        jdbcTemplate.update("INSERT INTO venus.product_ingredients (fk_product_version_id, fk_ingredient_id, position) "
+                + "SELECT ?, ingredient_id, ? FROM venus.ingredients WHERE inci_name = ?", versionId, position, inciName);
+    }
+
+    private void addEffect(String inciName, String category) {
+        jdbcTemplate.update("INSERT INTO venus.ingredient_effects (fk_ingredient_id, fk_profile_tag_id, effect_category, "
+                + "effect_name) SELECT i.ingredient_id, t.profile_tag_id, ?, 'efeito-teste' FROM venus.ingredients i "
+                + "CROSS JOIN venus.profile_tags t WHERE i.inci_name = ? AND t.slug = 'pele-acneica'", category, inciName);
     }
 
     private long versionIdOf(String formulaSignature) {

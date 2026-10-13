@@ -51,4 +51,8 @@ public record QuestionScore(
         double earnedPoints = declaredByBrand ? maxPoints : 0;
         return new QuestionScore(questionKey, maxPoints, true, earnedPoints, List.of(), List.of(note));
     }
+
+    public static QuestionScore fromUnknownClaim(String questionKey, int maxPoints, String note) {
+        return new QuestionScore(questionKey, maxPoints, false, 0, List.of(), List.of(note));
+    }
 }

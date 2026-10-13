@@ -84,11 +84,13 @@ public class ProductSnapshotLoader {
                 .toList();
         Optional<ProductSnapshot.PackagingData> packaging = findPackaging(productVersionId);
         int verifiedEthicalSealCount = countVerifiedEthicalSeals(productVersionId);
-        Map<Long, Integer> benefitCountByIngredientId = benefitCountByIngredientId(ingredientIds);
+        List<IngredientEffect> effects = findEffects(ingredientIds);
+        Map<Long, Integer> benefitCountByIngredientId = benefitCountByIngredientId(effects);
+        Set<Long> ingredientIdsWithEffect = ingredientIdsWithEffect(effects);
         List<ProductSnapshot.RuleData> rules = rulesFor(scoringModelId, ingredientIds, activeTagIds);
 
         return new ProductSnapshot(productVersionId, brandClaims, ingredients, packaging, verifiedEthicalSealCount,
-                benefitCountByIngredientId, rules);
+                benefitCountByIngredientId, ingredientIdsWithEffect, rules);
     }
 
     private ProductVersion getVersionOrThrow(Long productVersionId) {
@@ -138,14 +140,22 @@ public class ProductSnapshotLoader {
         return Math.toIntExact(verifiedEthicalSealCount);
     }
 
-    private Map<Long, Integer> benefitCountByIngredientId(List<Long> ingredientIds) {
-        List<IngredientEffect> benefitEffects = executeOrFail(
-                () -> ingredientEffectRepository.findByIngredientIdInAndEffectCategory(ingredientIds, EffectCategory.BENEFIT),
+    private List<IngredientEffect> findEffects(List<Long> ingredientIds) {
+        return executeOrFail(() -> ingredientEffectRepository.findByIngredientIdIn(ingredientIds),
                 "Falha ao consultar efeitos de ingrediente");
+    }
 
-        return benefitEffects.stream()
+    private Map<Long, Integer> benefitCountByIngredientId(List<IngredientEffect> effects) {
+        return effects.stream()
+                .filter(effect -> effect.getEffectCategory() == EffectCategory.BENEFIT)
                 .collect(Collectors.groupingBy(effect -> effect.getIngredient().getId(),
                         Collectors.summingInt(effect -> 1)));
+    }
+
+    private Set<Long> ingredientIdsWithEffect(List<IngredientEffect> effects) {
+        return effects.stream()
+                .map(effect -> effect.getIngredient().getId())
+                .collect(Collectors.toSet());
     }
 
     private List<ProductSnapshot.RuleData> rulesFor(Long scoringModelId, List<Long> ingredientIds,
@@ -169,8 +179,16 @@ public class ProductSnapshotLoader {
 
     private ProductSnapshot.BrandClaims toBrandClaims(Brand brand) {
         return new ProductSnapshot.BrandClaims(
-                Boolean.TRUE.equals(brand.getHasVeganClaim()),
-                Boolean.TRUE.equals(brand.getHasCrueltyFreeClaim()));
+                claimStatusOf(brand.getHasVeganClaim()),
+                claimStatusOf(brand.getHasCrueltyFreeClaim()));
+    }
+
+    private ProductSnapshot.ClaimStatus claimStatusOf(Boolean claim) {
+        if (claim == null) {
+            return ProductSnapshot.ClaimStatus.UNKNOWN;
+        }
+
+        return claim ? ProductSnapshot.ClaimStatus.DECLARED : ProductSnapshot.ClaimStatus.NOT_DECLARED;
     }
 
     private ProductSnapshot.IngredientData toIngredientData(Ingredient ingredient) {
