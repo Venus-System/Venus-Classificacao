@@ -179,8 +179,16 @@ public class ProductSnapshotLoader {
 
     private ProductSnapshot.BrandClaims toBrandClaims(Brand brand) {
         return new ProductSnapshot.BrandClaims(
-                Boolean.TRUE.equals(brand.getHasVeganClaim()),
-                Boolean.TRUE.equals(brand.getHasCrueltyFreeClaim()));
+                claimStatusOf(brand.getHasVeganClaim()),
+                claimStatusOf(brand.getHasCrueltyFreeClaim()));
+    }
+
+    private ProductSnapshot.ClaimStatus claimStatusOf(Boolean claim) {
+        if (claim == null) {
+            return ProductSnapshot.ClaimStatus.UNKNOWN;
+        }
+
+        return claim ? ProductSnapshot.ClaimStatus.DECLARED : ProductSnapshot.ClaimStatus.NOT_DECLARED;
     }
 
     private ProductSnapshot.IngredientData toIngredientData(Ingredient ingredient) {
