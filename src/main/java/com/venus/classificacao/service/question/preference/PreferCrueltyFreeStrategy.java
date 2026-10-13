@@ -17,6 +17,8 @@ public class PreferCrueltyFreeStrategy implements ProfileQuestionStrategy {
             "A marca declara não testar em animais, como você prefere.";
     private static final String NOT_DECLARED_NOTE =
             "A marca não declara que não testa em animais, e você prefere produtos cruelty-free.";
+    private static final String UNKNOWN_NOTE =
+            "A marca não informa se testa em animais, então essa preferência não entrou na nota.";
 
     @Override
     public Set<Long> activeTagIds(ProfileSnapshot profile) {
@@ -29,7 +31,12 @@ public class PreferCrueltyFreeStrategy implements ProfileQuestionStrategy {
             return QuestionScore.notApplicable(KEY, MAX_POINTS);
         }
 
-        boolean declaredByBrand = product.brandClaims().crueltyFree();
+        ProductSnapshot.ClaimStatus crueltyFreeClaim = product.brandClaims().crueltyFree();
+        if (crueltyFreeClaim == ProductSnapshot.ClaimStatus.UNKNOWN) {
+            return QuestionScore.fromUnknownClaim(KEY, MAX_POINTS, UNKNOWN_NOTE);
+        }
+
+        boolean declaredByBrand = crueltyFreeClaim == ProductSnapshot.ClaimStatus.DECLARED;
         String note = declaredByBrand ? DECLARED_NOTE : NOT_DECLARED_NOTE;
 
         return QuestionScore.fromBrandClaim(KEY, MAX_POINTS, declaredByBrand, note);
