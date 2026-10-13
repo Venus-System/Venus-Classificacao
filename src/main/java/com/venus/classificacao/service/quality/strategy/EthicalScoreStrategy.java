@@ -23,8 +23,10 @@ public class EthicalScoreStrategy implements BucketScoreStrategy {
     public OptionalDouble score(ProductSnapshot product) {
         ProductSnapshot.BrandClaims brandClaims = product.brandClaims();
 
-        double veganPoints = brandClaims.vegan() ? VEGAN_POINTS : 0;
-        double crueltyFreePoints = brandClaims.crueltyFree() ? CRUELTY_FREE_POINTS : 0;
+        double veganPoints = brandClaims.vegan() == ProductSnapshot.ClaimStatus.DECLARED ? VEGAN_POINTS : 0;
+        double crueltyFreePoints = brandClaims.crueltyFree() == ProductSnapshot.ClaimStatus.DECLARED
+                ? CRUELTY_FREE_POINTS
+                : 0;
         double sealPoints = Math.min(POINTS_PER_SEAL * product.verifiedEthicalSealCount(), MAX_SEAL_POINTS);
 
         return OptionalDouble.of(NEUTRAL_SCORE + veganPoints + crueltyFreePoints + sealPoints);
