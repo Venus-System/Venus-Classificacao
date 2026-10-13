@@ -55,7 +55,13 @@ public record ProductSnapshot(
                 .toList();
     }
 
-    public record BrandClaims(boolean vegan, boolean crueltyFree) {
+    public record BrandClaims(ClaimStatus vegan, ClaimStatus crueltyFree) {
+    }
+
+    public enum ClaimStatus {
+        DECLARED,
+        NOT_DECLARED,
+        UNKNOWN
     }
 
     public record IngredientData(
