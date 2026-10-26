@@ -71,7 +71,7 @@ public class ExplanationBuilder {
 
     private List<Reason> allergyReasons(List<AllergyMatch> allergies) {
         return allergies.stream()
-                .map(match -> Reason.ofAllergy(allergyText(match)))
+                .map(match -> Reason.ofAllergy(allergyText(match), match.ingredientNames()))
                 .toList();
     }
 

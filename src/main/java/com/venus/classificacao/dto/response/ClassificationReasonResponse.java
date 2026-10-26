@@ -3,6 +3,7 @@ package com.venus.classificacao.dto.response;
 import com.venus.classificacao.service.explanation.ReasonSource;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
+import java.util.List;
 
 public record ClassificationReasonResponse(
         @Schema(description = "De onde vem o motivo: regra de ingrediente, alergia, preferência ou qualidade do produto.")
@@ -26,6 +27,9 @@ public record ClassificationReasonResponse(
         String ingredientName,
         @Schema(description = "Etiqueta do perfil que a regra usa. Nula em motivo que não vem de regra.",
                 example = "pele-acneica", nullable = true)
-        String profileTagSlug
+        String profileTagSlug,
+        @Schema(description = "Ingredientes do produto que estão na alergia. Só vem no motivo de alergia; nulo nos "
+                + "outros.", example = "[\"LIMONENO\", \"LINALOL\"]", nullable = true)
+        List<String> ingredientNames
 ) {
 }

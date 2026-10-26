@@ -159,6 +159,22 @@ class ExplanationBuilderTest {
                 .isEqualTo("Tem A, B e C, que estão na sua alergia a Fragrância. Por isso a nota caiu 15 pontos.");
     }
 
+    @Test
+    void allergyReasonListsTheIngredients() {
+        Evaluation evaluation = evaluation(threeRules(), List.of(PREFERENCE_TEXT),
+                List.of(new AllergyMatch("Fragrância", RiskLevel.MEDIUM, List.of("LIMONENO", "LINALOL"))),
+                new Verdict(0, RecommendationLevel.CONTRAINDICATED, RiskLevel.CRITICAL), 0);
+
+        List<Reason> reasons = explanationBuilder.build(evaluation).reasons();
+
+        assertThat(reasons).filteredOn(reason -> reason.source() == ReasonSource.ALLERGY)
+                .extracting(Reason::ingredientNames)
+                .containsExactly(List.of("LIMONENO", "LINALOL"));
+        assertThat(reasons).filteredOn(reason -> reason.source() != ReasonSource.ALLERGY)
+                .extracting(Reason::ingredientNames)
+                .containsOnlyNulls();
+    }
+
     private String allergyTextOf(AllergyMatch match) {
         Evaluation evaluation = evaluation(List.of(), List.of(), List.of(match),
                 new Verdict(15, RecommendationLevel.CONTRAINDICATED, RiskLevel.CRITICAL), 0);
