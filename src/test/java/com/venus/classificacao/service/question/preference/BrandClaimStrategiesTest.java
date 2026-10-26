@@ -53,6 +53,38 @@ class BrandClaimStrategiesTest {
                 .containsExactly("A marca não informa se testa em animais, então essa preferência não entrou na nota.");
     }
 
+    @Test
+    void declaredVeganSaysItAddedPoints() {
+        QuestionScore score = vegan.score(productWith(DECLARED, UNKNOWN), profilePreferring(true, false));
+
+        assertThat(score.preferenceNotes()).containsExactly(
+                "A marca diz que é vegana, como você prefere, e isso somou pontos na nota.");
+    }
+
+    @Test
+    void undeclaredVeganSaysItAddedNothing() {
+        QuestionScore score = vegan.score(productWith(NOT_DECLARED, UNKNOWN), profilePreferring(true, false));
+
+        assertThat(score.preferenceNotes()).containsExactly("A marca não diz que é vegana, e você prefere produtos "
+                + "veganos, por isso essa parte não somou pontos.");
+    }
+
+    @Test
+    void declaredCrueltyFreeSaysItAddedPoints() {
+        QuestionScore score = crueltyFree.score(productWith(UNKNOWN, DECLARED), profilePreferring(false, true));
+
+        assertThat(score.preferenceNotes()).containsExactly(
+                "A marca diz que não testa em animais, como você prefere, e isso somou pontos na nota.");
+    }
+
+    @Test
+    void undeclaredCrueltyFreeSaysItAddedNothing() {
+        QuestionScore score = crueltyFree.score(productWith(UNKNOWN, NOT_DECLARED), profilePreferring(false, true));
+
+        assertThat(score.preferenceNotes()).containsExactly("A marca não diz que é livre de testes em animais, e você "
+                + "prefere produtos cruelty-free, por isso essa parte não somou pontos.");
+    }
+
     private static ProductSnapshot productWith(ProductSnapshot.ClaimStatus veganClaim,
             ProductSnapshot.ClaimStatus crueltyFreeClaim) {
         return new ProductSnapshot(1L, new ProductSnapshot.BrandClaims(veganClaim, crueltyFreeClaim), List.of(),

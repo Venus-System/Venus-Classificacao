@@ -30,8 +30,8 @@ class ProfileResultTest {
 
     @Test
     void sameRuleInTwoQuestionsBecomesOneMatchedRule() {
-        ProductSnapshot.RuleData acneRule = new ProductSnapshot.RuleData(1L, 10L, "Niacinamida", 100L, "pele-acneica",
-                EffectType.BONUS, 5, BigDecimal.ONE, "");
+        ProductSnapshot.RuleData acneRule = new ProductSnapshot.RuleData(1L, 10L, "Niacinamida", "Ativos", 100L,
+                "pele-acneica", "Pele Acneica", EffectType.BONUS, "Controle da acne", 5, BigDecimal.ONE, "");
 
         ProfileResult profileResult = new ProfileResult(List.of(
                 QuestionScore.fromRules("skin-type", 9, List.of(acneRule)),

@@ -14,9 +14,9 @@ public class PreferVeganStrategy implements ProfileQuestionStrategy {
     private static final int MAX_POINTS = 3;
 
     private static final String DECLARED_NOTE =
-            "A marca declara ser vegana, como você prefere.";
+            "A marca diz que é vegana, como você prefere, e isso somou pontos na nota.";
     private static final String NOT_DECLARED_NOTE =
-            "A marca não declara ser vegana, e você prefere produtos veganos.";
+            "A marca não diz que é vegana, e você prefere produtos veganos, por isso essa parte não somou pontos.";
     private static final String UNKNOWN_NOTE =
             "A marca não informa se é vegana, então essa preferência não entrou na nota.";
 

@@ -60,7 +60,7 @@ class QuestionScoreTest {
     }
 
     private static ProductSnapshot.RuleData rule(Long ruleId, EffectType effectType, int scoreDelta) {
-        return new ProductSnapshot.RuleData(ruleId, 10L, "Niacinamida", 100L, "pele-acneica", effectType, scoreDelta,
-                BigDecimal.ONE, "");
+        return new ProductSnapshot.RuleData(ruleId, 10L, "Niacinamida", "Ativos", 100L, "pele-acneica",
+                "Pele Acneica", effectType, "Controle da acne", scoreDelta, BigDecimal.ONE, "");
     }
 }

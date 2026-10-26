@@ -18,8 +18,8 @@ public class FinalScorePolicy {
     private static final Set<RiskLevel> CONTRAINDICATING_SEVERITIES = EnumSet.of(RiskLevel.HIGH, RiskLevel.CRITICAL);
 
     private static final int HIGH_ALLERGY_MAX_SCORE = 15;
-    private static final int MEDIUM_ALLERGY_MAX_SCORE = 49;
-    private static final int LOW_ALLERGY_DISCOUNT = 15;
+    public static final int MEDIUM_ALLERGY_MAX_SCORE = 49;
+    public static final int LOW_ALLERGY_DISCOUNT = 15;
 
     private static final int IDEAL_FROM = 85;
     private static final int RECOMMENDED_FROM = 70;

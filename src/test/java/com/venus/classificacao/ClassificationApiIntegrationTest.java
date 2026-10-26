@@ -44,6 +44,8 @@ import org.testcontainers.utility.MountableFile;
 class ClassificationApiIntegrationTest {
 
     private static final String NIACINAMIDE_REASON = "Niacinamida ajuda a pele com acne.";
+    private static final String GENERATED_REASON =
+            "Ativos com controle-da-acne. Pelo seu perfil (tendência a acne), isso somou pontos na nota.";
     private static final String VEGAN_UNKNOWN_REASON =
             "A marca não informa se é vegana, então essa preferência não entrou na nota.";
     private static final String BY_PRODUCT = "/api/classifications/user/{userId}/product/{productId}";
@@ -194,6 +196,31 @@ class ClassificationApiIntegrationTest {
                 .andExpect(jsonPath("$.reasons[0].profileTagSlug").value("pele-acneica"))
                 .andExpect(jsonPath("$.summary").value("Nota 34 de 100 - Não recomendado. " + NIACINAMIDE_REASON))
                 .andExpect(jsonPath("$.calculatedAt").exists());
+    }
+
+    @Test
+    void ruleWithoutReasonIsExplainedByCategoryAndEffect() throws Exception {
+        long userId = insertAcneProneUser("uid-regra-sem-motivo");
+        long versionId = versionIdOf("niacinamida-v1");
+        jdbcTemplate.update("UPDATE venus.compatibility_rules SET reason = '' WHERE reason = ?", NIACINAMIDE_REASON);
+        try {
+            postClassification("uid-regra-sem-motivo", userId, versionId)
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.reasons[0].text").value(GENERATED_REASON))
+                    .andExpect(jsonPath("$.summary").value(
+                            "Nota 34 de 100 - Não recomendado. 1 ingrediente com controle-da-acne (tendência a acne)."));
+
+            jdbcTemplate.update("UPDATE venus.rule_evaluations re SET explanation = '' "
+                    + "FROM venus.analysis_results ar "
+                    + "WHERE ar.analysis_result_id = re.fk_analysis_result_id AND ar.fk_user_id = ?", userId);
+
+            mockMvc.perform(get(BY_VERSION, userId, versionId).with(appUser("uid-regra-sem-motivo")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.reasons[0].text").value(GENERATED_REASON));
+        } finally {
+            jdbcTemplate.update("UPDATE venus.compatibility_rules SET reason = ? WHERE reason = ''",
+                    NIACINAMIDE_REASON);
+        }
     }
 
     @Test
