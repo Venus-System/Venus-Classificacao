@@ -8,7 +8,8 @@ public record ClassificationReasonResponse(
         @Schema(description = "De onde vem o motivo: regra de ingrediente, alergia, preferência ou qualidade do produto.")
         ReasonSource source,
         @Schema(description = "O motivo em texto, para mostrar no app.",
-                example = "Niacinamida tem uma regra de bônus para pele-acneica.")
+                example = "Conservante com risco de irritação elevado. Pelo seu perfil (pele sensível), "
+                        + "isso tirou pontos da nota.")
         String text,
         @Schema(description = "Se o motivo é um alerta (bloqueio, penalidade ou alergia).", example = "false")
         Boolean warning,

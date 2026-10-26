@@ -217,9 +217,12 @@ public class ProductSnapshotLoader {
                 rule.getId(),
                 effect.getIngredient().getId(),
                 effect.getIngredient().getCommonName(),
+                effect.getIngredient().getIngredientCategory().getName(),
                 effect.getProfileTag().getId(),
                 effect.getProfileTag().getSlug(),
+                effect.getProfileTag().getName(),
                 scoredEffectType(rule.getEffectType()),
+                effect.getEffectName(),
                 rule.getScoreDelta(),
                 rule.getWeight(),
                 rule.getReason());

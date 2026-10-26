@@ -14,7 +14,8 @@ public interface CompatibilityRuleRepository extends JpaRepository<Compatibility
     @Query("""
             select r from CompatibilityRule r
             join fetch r.ingredientEffect e
-            join fetch e.ingredient
+            join fetch e.ingredient i
+            join fetch i.ingredientCategory
             join fetch e.profileTag
             where r.scoringModel.id in :scoringModelIds
               and r.isEnabled = true

@@ -24,6 +24,8 @@ class ExplanationBuilderTest {
     private static final String BLOCK_TEXT = "Lilial é proibido na gestação.";
     private static final String ALLERGY_TEXT = "Contém Lanolina, ligado à sua alergia a Lanolina (gravidade alta).";
     private static final String PREFERENCE_TEXT = "A marca declara ser vegana, como você prefere.";
+    private static final String BONUS_TEXT =
+            "Ativos com controle da acne. Pelo seu perfil (tendência a acne), isso somou pontos na nota.";
 
     private final ExplanationBuilder explanationBuilder = new ExplanationBuilder();
 
@@ -34,7 +36,7 @@ class ExplanationBuilderTest {
         assertThat(reasons).extracting(Reason::text).containsExactly(
                 BLOCK_TEXT,
                 "Álcool resseca a pele.",
-                "Niacinamida tem uma regra de bônus para pele-acneica.");
+                BONUS_TEXT);
         assertThat(reasons).extracting(Reason::warning).containsExactly(true, true, false);
     }
 
@@ -54,7 +56,7 @@ class ExplanationBuilderTest {
                 ALLERGY_TEXT,
                 PREFERENCE_TEXT,
                 "Álcool resseca a pele.",
-                "Niacinamida tem uma regra de bônus para pele-acneica.",
+                BONUS_TEXT,
                 "Qualidade do produto: 74 de 100.");
     }
 
@@ -104,7 +106,7 @@ class ExplanationBuilderTest {
 
     private static MatchedRule rule(Long ruleId, String ingredientName, EffectType effectType, int scoreDelta,
             String reason) {
-        return MatchedRule.of(new ProductSnapshot.RuleData(ruleId, ruleId, ingredientName, 100L, "pele-acneica",
-                effectType, scoreDelta, BigDecimal.ONE, reason));
+        return MatchedRule.of(new ProductSnapshot.RuleData(ruleId, ruleId, ingredientName, "Ativos", 100L,
+                "pele-acneica", "Pele Acneica", effectType, "Controle da acne", scoreDelta, BigDecimal.ONE, reason));
     }
 }

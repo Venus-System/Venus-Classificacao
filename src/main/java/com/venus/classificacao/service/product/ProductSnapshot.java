@@ -91,9 +91,12 @@ public record ProductSnapshot(
             Long ruleId,
             Long ingredientId,
             String ingredientName,
+            String categoryName,
             Long profileTagId,
             String profileTagSlug,
+            String profileTagName,
             EffectType effectType,
+            String effectName,
             int scoreDelta,
             BigDecimal weight,
             String reason
