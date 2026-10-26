@@ -14,9 +14,9 @@ public class PreferCrueltyFreeStrategy implements ProfileQuestionStrategy {
     private static final int MAX_POINTS = 2;
 
     private static final String DECLARED_NOTE =
-            "A marca declara não testar em animais, como você prefere.";
-    private static final String NOT_DECLARED_NOTE =
-            "A marca não declara que não testa em animais, e você prefere produtos cruelty-free.";
+            "A marca diz que não testa em animais, como você prefere, e isso somou pontos na nota.";
+    private static final String NOT_DECLARED_NOTE = "A marca não diz que é livre de testes em animais, e você "
+            + "prefere produtos cruelty-free, por isso essa parte não somou pontos.";
     private static final String UNKNOWN_NOTE =
             "A marca não informa se testa em animais, então essa preferência não entrou na nota.";
 
