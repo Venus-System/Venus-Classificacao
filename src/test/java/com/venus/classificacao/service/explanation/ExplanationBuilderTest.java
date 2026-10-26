@@ -22,8 +22,12 @@ import org.junit.jupiter.api.Test;
 class ExplanationBuilderTest {
 
     private static final String BLOCK_TEXT = "Lilial é proibido na gestação.";
-    private static final String ALLERGY_TEXT = "Contém Lanolina, ligado à sua alergia a Lanolina (gravidade alta).";
+    private static final String ALLERGY_TEXT =
+            "Tem Lanolina, que está na sua alergia a Lanolina. Por isso esse produto não é indicado para você.";
+    private static final String QUALITY_TEXT = "A qualidade do produto, sem olhar o seu perfil, é 74 de 100.";
     private static final String PREFERENCE_TEXT = "A marca declara ser vegana, como você prefere.";
+    private static final String COMEDOGENIC = "Potencial comedogênico alto";
+    private static final String IRRITATION = "Risco de irritação elevado";
     private static final String BONUS_TEXT =
             "Ativos com controle da acne. Pelo seu perfil (tendência a acne), isso somou pontos na nota.";
 
@@ -57,15 +61,55 @@ class ExplanationBuilderTest {
                 PREFERENCE_TEXT,
                 "Álcool resseca a pele.",
                 BONUS_TEXT,
-                "Qualidade do produto: 74 de 100.");
+                QUALITY_TEXT);
     }
 
     @Test
-    void summaryCitesTheTwoMainReasonsAndMarksTheWarnings() {
+    void summaryCitesTheTwoMainReasonsAndWarnsOnce() {
         Explanation explanation = explanationBuilder.build(contraindicatedEvaluation());
 
         assertThat(explanation.summary()).isEqualTo("Nota 0 de 100 - Contraindicado. "
-                + "Atenção: " + BLOCK_TEXT + " Atenção: " + ALLERGY_TEXT);
+                + "Atenção: " + BLOCK_TEXT + " " + ALLERGY_TEXT);
+    }
+
+    @Test
+    void summaryGroupsRulesWithTheSameEffect() {
+        List<MatchedRule> rules = List.of(
+                penalty(1L, 1L, COMEDOGENIC, "pele-acneica", "Pele Acneica", -10),
+                penalty(2L, 2L, COMEDOGENIC, "pele-acneica", "Pele Acneica", -10),
+                penalty(3L, 3L, COMEDOGENIC, "pele-acneica", "Pele Acneica", -10),
+                penalty(4L, 4L, IRRITATION, "reativa", "Reativa", -5),
+                penalty(5L, 5L, IRRITATION, "reativa", "Reativa", -5));
+
+        Explanation explanation = explanationBuilder.build(notRecommendedEvaluation(rules));
+
+        assertThat(explanation.summary()).isEqualTo("Nota 25 de 100 - Não recomendado. "
+                + "Atenção: 3 ingredientes com potencial comedogênico alto (tendência a acne). "
+                + "2 ingredientes com risco de irritação elevado (pele sensível).");
+    }
+
+    @Test
+    void summaryCountsIngredientsNotRules() {
+        List<MatchedRule> rules = List.of(
+                penalty(1L, 7L, COMEDOGENIC, "pele-acneica", "Pele Acneica", -10),
+                penalty(2L, 7L, COMEDOGENIC, "pele-acneica", "Pele Acneica", -10));
+
+        Explanation explanation = explanationBuilder.build(notRecommendedEvaluation(rules));
+
+        assertThat(explanation.summary()).isEqualTo("Nota 25 de 100 - Não recomendado. "
+                + "Atenção: 1 ingrediente com potencial comedogênico alto (tendência a acne).");
+    }
+
+    @Test
+    void summaryNeverRepeatsASentence() {
+        List<MatchedRule> rules = List.of(
+                rule(1L, "Álcool", EffectType.PENALTY, -10, "Álcool resseca a pele."),
+                rule(2L, "Etanol", EffectType.PENALTY, -10, "Álcool resseca a pele."));
+
+        Explanation explanation = explanationBuilder.build(notRecommendedEvaluation(rules));
+
+        assertThat(explanation.summary())
+                .isEqualTo("Nota 25 de 100 - Não recomendado. Atenção: Álcool resseca a pele.");
     }
 
     @Test
@@ -76,15 +120,71 @@ class ExplanationBuilderTest {
         Explanation explanation = explanationBuilder.build(evaluation);
 
         assertThat(explanation.reasons()).extracting(Reason::text).containsExactly(
-                "Qualidade do produto: 74 de 100.",
-                "3 de 18 ingredientes ainda sem avaliação de saúde e ambiental.");
+                QUALITY_TEXT,
+                "3 dos 18 ingredientes ainda não foram avaliados, então ficaram fora da nota de qualidade.");
         assertThat(explanation.summary()).isEqualTo("Nota 74 de 100 - Recomendado.");
+    }
+
+    @Test
+    void oneUnevaluatedIngredientIsSingular() {
+        Evaluation evaluation = evaluation(List.of(), List.of(), List.of(),
+                new Verdict(74, RecommendationLevel.RECOMMENDED, RiskLevel.LOW), 1);
+
+        assertThat(explanationBuilder.build(evaluation).reasons()).extracting(Reason::text).contains(
+                "1 dos 18 ingredientes ainda não foi avaliado, então ficou fora da nota de qualidade.");
+    }
+
+    @Test
+    void highAllergyIsNotIndicated() {
+        assertThat(allergyTextOf(new AllergyMatch("Lanolina", RiskLevel.HIGH, List.of("Lanolina"))))
+                .isEqualTo(ALLERGY_TEXT);
+    }
+
+    @Test
+    void criticalAllergyIsNotIndicated() {
+        assertThat(allergyTextOf(new AllergyMatch("Lanolina", RiskLevel.CRITICAL, List.of("Lanolina"))))
+                .isEqualTo(ALLERGY_TEXT);
+    }
+
+    @Test
+    void mediumAllergyCapsTheScore() {
+        assertThat(allergyTextOf(new AllergyMatch("Fragrância", RiskLevel.MEDIUM, List.of("LIMONENO", "LINALOL"))))
+                .isEqualTo("Tem LIMONENO e LINALOL, que estão na sua alergia a Fragrância. "
+                        + "Por isso a nota fica no máximo em 49.");
+    }
+
+    @Test
+    void lowAllergyTakesPoints() {
+        assertThat(allergyTextOf(new AllergyMatch("Fragrância", RiskLevel.LOW, List.of("A", "B", "C"))))
+                .isEqualTo("Tem A, B e C, que estão na sua alergia a Fragrância. Por isso a nota caiu 15 pontos.");
+    }
+
+    private String allergyTextOf(AllergyMatch match) {
+        Evaluation evaluation = evaluation(List.of(), List.of(), List.of(match),
+                new Verdict(15, RecommendationLevel.CONTRAINDICATED, RiskLevel.CRITICAL), 0);
+
+        return explanationBuilder.build(evaluation).reasons().stream()
+                .filter(reason -> reason.source() == ReasonSource.ALLERGY)
+                .map(Reason::text)
+                .findFirst()
+                .orElseThrow();
     }
 
     private static Evaluation contraindicatedEvaluation() {
         return evaluation(threeRules(), List.of(PREFERENCE_TEXT),
                 List.of(new AllergyMatch("Lanolina", RiskLevel.HIGH, List.of("Lanolina"))),
                 new Verdict(0, RecommendationLevel.CONTRAINDICATED, RiskLevel.CRITICAL), 0);
+    }
+
+    private static Evaluation notRecommendedEvaluation(List<MatchedRule> rules) {
+        return evaluation(rules, List.of(), List.of(),
+                new Verdict(25, RecommendationLevel.NOT_RECOMMENDED, RiskLevel.HIGH), 0);
+    }
+
+    private static MatchedRule penalty(Long ruleId, Long ingredientId, String effectName, String tagSlug,
+            String tagName, int scoreDelta) {
+        return MatchedRule.of(new ProductSnapshot.RuleData(ruleId, ingredientId, "Ingrediente " + ingredientId,
+                "Emoliente", 100L, tagSlug, tagName, EffectType.PENALTY, effectName, scoreDelta, BigDecimal.ONE, ""));
     }
 
     private static List<MatchedRule> threeRules() {
