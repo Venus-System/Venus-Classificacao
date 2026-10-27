@@ -1,0 +1,11 @@
+[Unit]
+Description=Verifica uma nova imagem da Venus-Classificacao no GHCR
+After=docker.service venus-classificacao.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=15min
+Environment=VENUS_CLASSIFICACAO_REMOTE_IMAGE=ghcr.io/venus-system/venus-classificacao:staging
+ExecStart=/usr/local/sbin/venus-classificacao-poll
+

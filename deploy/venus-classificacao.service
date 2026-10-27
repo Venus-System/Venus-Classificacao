@@ -1,0 +1,16 @@
+[Unit]
+Description=Venus-Classificacao
+Requires=docker.service
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Restart=always
+RestartSec=10
+ExecStartPre=-/usr/bin/docker rm -f venus-classificacao
+ExecStart=/usr/bin/docker run --name venus-classificacao --env-file /etc/venus-classificacao.env -p 127.0.0.1:8081:8080 venus-classificacao:current
+ExecStop=/usr/bin/docker stop -t 30 venus-classificacao
+ExecStopPost=-/usr/bin/docker rm -f venus-classificacao
+
+[Install]
+WantedBy=multi-user.target

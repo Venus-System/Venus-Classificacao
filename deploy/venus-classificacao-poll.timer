@@ -1,0 +1,10 @@
+[Unit]
+Description=Verifica o deploy da Venus-Classificacao a cada minuto
+
+[Timer]
+OnBootSec=30s
+OnCalendar=*-*-* *:*:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
