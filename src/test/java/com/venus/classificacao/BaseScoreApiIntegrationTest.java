@@ -174,6 +174,15 @@ class BaseScoreApiIntegrationTest {
                         "Não achou o modelo de score pedido, ou não existe modelo ativo. O campo code diz qual."));
     }
 
+    @Test
+    void apiDocsUseTheProxyAddress() throws Exception {
+        mockMvc.perform(get("/v3/api-docs")
+                        .header("Host", "venus-classificacao.duckdns.org")
+                        .header("X-Forwarded-Proto", "https"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.servers[0].url").value("https://venus-classificacao.duckdns.org"));
+    }
+
     private ResultActions postAll() throws Exception {
         return mockMvc.perform(post(ALL).with(admin()));
     }
