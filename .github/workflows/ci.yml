@@ -23,3 +23,6 @@ jobs:
 
       - name: Build and test
         run: ./mvnw verify -B
+
+      - name: ShellCheck dos scripts de deploy
+        run: shellcheck --severity=warning deploy/venus-classificacao-deploy.sh deploy/venus-classificacao-poll.sh
