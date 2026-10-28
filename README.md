@@ -344,11 +344,68 @@ O `01_users_email_password_hash.sql` do teste cobre duas colunas que já estão 
 
 | Workflow | Quando roda | O que faz |
 |---|---|---|
-| `ci.yml` | PR para `develop` ou `main` | `./mvnw verify` |
-| `deploy-qa.yml` | push em `develop` | Build, testes e imagem no GHCR com as tags `staging` e `develop-<sha>` |
+| `ci.yml` | PR para `develop` ou `main` | `./mvnw verify` e ShellCheck dos scripts de deploy |
+| `deploy-qa.yml` | push em `develop` | Build, testes e publicação das imagens `staging` e `develop-<sha>` no GHCR |
 | `deploy-prod.yml` | push em `main` | Build, testes e imagem no GHCR com as tags `latest` e `main-<sha>` |
 
-A etapa de deploy dos dois ambientes ainda não tem host definido: hoje ela só publica a imagem.
+No QA, o build e os testes rodam no `ubuntu-latest` do GitHub e publicam a imagem privada `staging` no GHCR. A EC2 não tem runner do GitHub: um timer do `systemd` verifica o digest do GHCR a cada minuto, chama o helper root-owned, troca o container pela imagem nova, faz o health check em `http://127.0.0.1:8081/swagger-ui.html` e volta para a imagem anterior se der erro. Uma imagem que falhou fica registrada em `/var/lib/venus-classificacao/failed-image` e não entra novamente até aparecer outro digest. Nenhum PR consegue executar comandos na EC2; o `.env` e o token do GHCR ficam somente na máquina.
+
+### Instalação do deploy na EC2
+
+A instalação precisa ser feita como `root` na mesma máquina do Venus-CRUD, que já possui Docker. A unit `venus-classificacao.service` fica em `deploy/` e mantém o contrato abaixo: container `venus-classificacao`, `--env-file /etc/venus-classificacao.env`, mapeamento `-p 127.0.0.1:8081:8080` e a imagem como último argumento do `docker run`. A porta fica só na máquina: quem fala com ela é o Nginx.
+
+```ini
+[Service]
+ExecStart=/usr/bin/docker run --name venus-classificacao --env-file /etc/venus-classificacao.env -p 127.0.0.1:8081:8080 venus-classificacao:current
+```
+
+Crie o `.env` da máquina com as variáveis do `.env.example`, com `SERVER_PORT=8080` e o mesmo `ADMIN_JWT_SECRET` do Venus-CRUD:
+
+```bash
+sudo install -o root -g root -m 0600 /dev/null /etc/venus-classificacao.env
+sudoedit /etc/venus-classificacao.env
+```
+
+Instale os scripts e as units:
+
+```bash
+sudo install -o root -g root -m 0755 deploy/venus-classificacao-deploy.sh /usr/local/sbin/venus-classificacao-deploy
+sudo install -o root -g root -m 0755 deploy/venus-classificacao-poll.sh /usr/local/sbin/venus-classificacao-poll
+sudo install -o root -g root -m 0644 deploy/venus-classificacao.service /etc/systemd/system/venus-classificacao.service
+sudo install -o root -g root -m 0644 deploy/venus-classificacao-poll.service /etc/systemd/system/venus-classificacao-poll.service
+sudo install -o root -g root -m 0644 deploy/venus-classificacao-poll.timer /etc/systemd/system/venus-classificacao-poll.timer
+sudo install -d -o root -g root -m 0755 /var/lib/venus-classificacao
+```
+
+Crie o token clássico do GitHub com apenas `read:packages`, coloque-o no arquivo local e não o envie para o repositório. O mesmo token do Venus-CRUD serve:
+
+```bash
+sudo install -o root -g root -m 0600 /dev/null /etc/venus-classificacao-ghcr.token
+sudoedit /etc/venus-classificacao-ghcr.token
+sudo chmod 600 /etc/venus-classificacao-ghcr.token
+```
+
+Depois habilite a unit e o polling:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable venus-classificacao.service
+sudo systemctl enable --now venus-classificacao-poll.timer
+sudo systemctl status venus-classificacao-poll.timer
+```
+
+O helper puxa a imagem remota fixa `ghcr.io/venus-system/venus-classificacao:staging`, mas a unit roda somente a tag local `venus-classificacao:current`. Durante a troca ele guarda `venus-classificacao:previous`, faz rollback sem esperar o health check quando recebe cancelamento e remove imagens antigas sem tag após um deploy bem-sucedido.
+
+### Nginx
+
+O Nginx recebe `https://venus-classificacao.duckdns.org` e manda para `127.0.0.1:8081`. A aplicação lê o protocolo que ele envia (`server.forward-headers-strategy: framework`), por isso o Swagger monta os links com `https://`:
+
+```bash
+sudo install -o root -g root -m 0644 deploy/nginx/venus-classificacao.conf /etc/nginx/conf.d/venus-classificacao.conf
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d venus-classificacao.duckdns.org --redirect
+```
 
 ## Como contribuir
 

@@ -3,20 +3,23 @@ name: Deploy Staging
 on:
   push:
     branches: [develop]
+  workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
   build-and-push:
-    name: Build, test e publicar imagem
+    if: github.ref == 'refs/heads/develop'
+    name: Build, testes e publicar imagem
     runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.meta.outputs.tags }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,14 +57,3 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-  deploy:
-    name: Deploy para QA
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    environment: qa
-    steps:
-      - name: Deploy pendente de host
-        run: |
-          echo "Imagem publicada: ${{ needs.build-and-push.outputs.image }}"
-          echo "Host de QA ainda nao definido - nenhum deploy executado."
