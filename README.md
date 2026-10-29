@@ -1,1 +1,428 @@
 # Venus-Classificacao
+
+API de classificação do **Venus-System**, a plataforma de análise de produtos cosméticos. Ela calcula a nota de 0 a 100 de um produto para o perfil de um usuário e explica o porquê da nota.
+
+A Classificação não é dona de nenhum dado. Ela lê o catálogo e o perfil do usuário direto do banco que o Venus-CRUD usa, faz a conta e grava o resultado: a análise, a nota pessoal, as regras que bateram e a nota do produto. O app mobile, a web e o painel de administração chamam ela por HTTP.
+
+## Sumário
+
+- [Onde ela entra no sistema](#onde-ela-entra-no-sistema)
+- [Stack](#stack)
+- [O que a API faz](#o-que-a-api-faz)
+- [Estrutura do projeto](#estrutura-do-projeto)
+- [Como uma requisição passa pelo código](#como-uma-requisição-passa-pelo-código)
+- [Segurança](#segurança)
+- [Como rodar](#como-rodar)
+- [Documentação da API (Swagger)](#documentação-da-api-swagger)
+- [Rotas](#rotas)
+- [Testes](#testes)
+- [CI/CD](#cicd)
+- [Como contribuir](#como-contribuir)
+- [Licença](#licença)
+
+## Onde ela entra no sistema
+
+```
+ Venus-Mobile (Android)  ─┐
+ Venus-Web (React)       ─┼──HTTP──>  Venus-Classificacao  ──JPA──>  PostgreSQL (schema venus)
+ Painel admin            ─┘                    │                              ▲
+                                               │                              │
+              token do Firebase (app) ─────────┤              Venus-CRUD ──JPA─┘
+              token do admin (do CRUD) ────────┘
+```
+
+| Repositório | Papel |
+|---|---|
+| **Venus-Classificacao** (este) | Motor que calcula a nota 0–100 do produto para cada perfil |
+| Venus-CRUD | API central: CRUD de todo o schema `venus`, o fluxo dos scans e o login do admin |
+| Venus-Banco | Schema PostgreSQL, functions, procedures e triggers. É a fonte da verdade do banco |
+| Venus-AI-api / Venus-AI-Sdk | Agentes de IA (Python/FastAPI) |
+| Venus-Mobile | App Android onde o usuário escaneia o produto |
+| Venus-Web | Aplicação web: questionário, perfil, busca e produto |
+
+Todos ficam na organização [Venus-System](https://github.com/Venus-System).
+
+## Stack
+
+| Tecnologia | Versão | Para quê |
+|---|---|---|
+| Java | 21 | Linguagem (com virtual threads ligadas) |
+| Spring Boot | 3.3.4 | Web, Data JPA, Validation |
+| Spring Security + OAuth2 Resource Server | do Boot | Validação dos tokens do Firebase e do admin |
+| PostgreSQL | 16 | Banco relacional (schema `venus`, o mesmo do Venus-CRUD) |
+| Redis (Spring Data Redis + Spring Cache) | do Boot | Cache da análise salva nos `GET` |
+| MapStruct | 1.5.5.Final | Conversão do resultado para DTO |
+| Lombok | do Boot | Getters, setters e construtores das entities |
+| springdoc-openapi | 2.6.0 | Swagger UI |
+| Testcontainers | do Boot | Teste de integração com Postgres e Redis reais |
+| Maven Wrapper | — | Build (`./mvnw`) |
+
+## O que a API faz
+
+A API recebe o usuário e a versão do produto e devolve a nota, a faixa de recomendação, o nível de risco e os motivos. A conta tem três partes.
+
+**1. Nota de qualidade (0 a 100)**
+É a média de quatro notas do produto, cada uma com um peso: saúde (35), desempenho (20), ambiental (15) e ético (15). O modelo de score pode reforçar ou aliviar esses pesos pelas categorias dele. Saúde e desempenho só usam ingredientes avaliados (`scientific_confidence` maior que 0). O desempenho conta, desses, só os que têm algum efeito em `ingredient_effects`: ingrediente sem nenhum efeito sai da média, e o que tem efeito mas nenhum benefício entra com 0. A embalagem só entra no ambiental quando tem `confidence_score` maior que 0. Nota sem nenhum dado avaliado fica `null` e sai da média, em vez de contar como 0. Essa nota não depende de quem está analisando.
+
+**2. Compatibilidade com o perfil (0 a 100%)**
+São 15 perguntas do perfil: tipo de pele, tendência a acne, rosácea, eczema, hiperpigmentação, melasma, tipo de couro cabeludo, gestação, amamentação, vegano, cruelty-free, sem parabeno, sem sulfato, sem silicone e outras preferências. Cada pergunta soma pontos pelas regras de compatibilidade que batem entre os ingredientes do produto e as etiquetas do usuário. Vegano e cruelty-free vêm da declaração da marca (`brands.has_vegan_claim` e `has_cruelty_free_claim`); quando a marca não informa (`NULL`), a pergunta sai da conta e o motivo avisa. Pergunta que o usuário não respondeu também sai da conta.
+
+**3. Nota final**
+A qualidade vale até 35 pontos e o perfil até 65. Exemplo: qualidade 74 vira 25,9 pontos (35 × 74 ÷ 100), compatibilidade de 23,53% vira 15,3 pontos (65 × 23,53%), e a nota final é 41. Se nenhuma pergunta entrar na conta, a nota final é a própria nota de qualidade.
+
+Depois da soma entram as travas:
+
+| Situação | O que acontece com a nota |
+|---|---|
+| Regra de bloqueio (ex.: ingrediente proibido na gestação) | vira 0, e o produto fica contraindicado |
+| Alergia crítica | vira 0, contraindicado |
+| Alergia alta | no máximo 15, contraindicado |
+| Alergia média | no máximo 49 |
+| Alergia baixa | perde 15 pontos |
+
+E a faixa sai da nota final: ideal a partir de 85, recomendado a partir de 70, aceitável a partir de 50, não recomendado a partir de 25 e contraindicado abaixo disso.
+
+**O que é gravado**
+Cada classificação grava uma linha nova em `analysis_results` e em `personalized_scores`, uma linha em `rule_evaluations` para cada regra que bateu, e atualiza a nota de qualidade da versão em `product_scores`. O histórico acumula: nada é sobrescrito, a não ser a nota do produto.
+
+**Cache da análise salva**
+Os dois `GET` da classificação guardam a análise salva no Redis por 6 horas, com a chave `classificacoes::{usuário}:{versão}:{modelo}` (ex.: `classificacoes::42:7:1`). Um `POST` novo do mesmo usuário, versão e modelo apaga essa chave, e o `GET` seguinte lê do banco de novo. O 404 não vai para o cache. Se o Redis estiver fora do ar, a API responde pelo banco e só registra um aviso no log. Uma análise mudada direto no banco ou pelo Venus-CRUD só aparece aqui quando a chave vence.
+
+**Nota base**
+É a nota de qualidade sozinha, sem perfil, gravada em `product_scores` por versão e modelo. Além de sair junto da classificação, o admin calcula ela direto: por versão, no fim do cadastro de um produto, ou para a versão atual de todos os produtos de uma vez. A conta é a mesma da parte 1. Para ler as notas gravadas, o painel usa o `GET /api/product-scores` do Venus-CRUD.
+
+**Quando a API recusa**
+Os 404 e os 422 trazem um `code` que diz o motivo sem precisar ler a mensagem:
+
+| Status | `code` | Quando |
+|---|---|---|
+| 404 | `PROFILE_NOT_FOUND` | O usuário não tem perfil cadastrado |
+| 404 | `VERSION_NOT_FOUND` | A versão do produto não existe |
+| 404 | `SCORING_MODEL_NOT_FOUND` | O modelo de score pedido não existe |
+| 404 | `NO_ACTIVE_SCORING_MODEL` | Não foi pedido modelo e nenhum está ativo |
+| 422 | `VERSION_UNDER_REVIEW` | A versão está em revisão e não pode ser classificada |
+| 422 | `NO_INGREDIENTS` | A versão não tem nenhum ingrediente cadastrado |
+
+## Estrutura do projeto
+
+```
+Venus-Classificacao/
+├── .github/
+│   ├── workflows/                 # ci.yml, deploy-qa.yml, deploy-prod.yml
+│   └── pull_request_template.md
+├── src/
+│   └── main/
+│       ├── java/com/venus/classificacao/
+│       │   ├── config/            # Segurança, Swagger, JPA, cache, MapStruct, propriedades do .env
+│       │   ├── controller/        # Rotas da classificação e da nota base
+│       │   ├── dto/
+│       │   │   ├── request/       # Corpo do POST
+│       │   │   └── response/      # O que a API devolve
+│       │   ├── entity/            # Entities JPA, enums e converters (as mesmas do Venus-CRUD)
+│       │   ├── exception/         # Exceções, códigos de erro e o GlobalExceptionHandler
+│       │   ├── mapper/            # Mapper MapStruct do resultado
+│       │   ├── repository/        # Spring Data, um pacote por domínio
+│       │   ├── security/          # Tokens, papéis e checagem de dono
+│       │   └── service/           # O motor, um pacote por etapa
+│       │       ├── profile/       # Carrega o perfil do usuário
+│       │       ├── product/       # Carrega o produto e escolhe as regras do modelo
+│       │       ├── quality/       # Nota de qualidade (strategy/ tem uma classe por nota)
+│       │       ├── question/      # Uma classe por pergunta do perfil
+│       │       ├── verdict/       # Soma, alergias, travas e faixa
+│       │       ├── explanation/   # Motivos e resumo
+│       │       ├── recording/     # Grava o resultado no banco
+│       │       └── basescore/     # Nota base: calcula e grava uma versão por vez
+│       └── resources/
+│           └── application.yml    # Toda configuração vem de variável de ambiente
+├── .env.example                   # Modelo das variáveis de ambiente
+├── docker-compose.yml             # Postgres local
+├── Dockerfile                     # Imagem da API (build em duas etapas)
+└── pom.xml
+```
+
+## Como uma requisição passa pelo código
+
+```
+POST /api/classifications
+ └─> ClassificationController       valida o corpo (@Valid) e confere o dono (@PreAuthorize)
+      └─> ClassificationService     uma transação só
+           ├─> ProfileSnapshotLoader         perfil, preferências, etiquetas e alergias
+           ├─> ProductSnapshotLoader         versão, ingredientes, embalagem, selos e regras
+           ├─> BucketWeightsLoader           pesos das notas de qualidade
+           ├─> PersonalizedScoreCalculator   qualidade → perguntas → soma → alergias → travas
+           ├─> ExplanationBuilder            motivos e resumo
+           ├─> ClassificationRecorder        grava a análise, a nota pessoal, as regras e a nota do produto
+           └─> ClassificationMapper          resultado → DTO
+```
+
+- O **controller** recebe a requisição, valida e chama o service. Ele não tem regra de negócio.
+- Os **loaders** leem o banco e devolvem cópias dos dados. As contas nunca recebem entity nem consultam o banco.
+- A **entity** nunca sai pela API. A resposta é sempre um DTO `record`.
+- Os erros passam pelo `GlobalExceptionHandler` e sempre voltam no mesmo formato:
+
+```json
+{
+  "timestamp": "2026-10-04T10:15:30-03:00",
+  "status": 404,
+  "error": "Not Found",
+  "code": "PROFILE_NOT_FOUND",
+  "message": "Perfil nao encontrado para o usuario com id 42",
+  "path": "/api/classifications",
+  "details": []
+}
+```
+
+## Segurança
+
+A API aceita os mesmos dois tokens do Venus-CRUD, no cabeçalho `Authorization: Bearer <token>`:
+
+| Token | Quem usa | Como é obtido | Papel |
+|---|---|---|---|
+| Firebase | Usuário do app e da web | Login no Firebase, feito pelo próprio app | `USER` |
+| JWT do admin | Painel de administração | `POST /api/auth/admin/login` do **Venus-CRUD**, com e-mail e senha | `ADMIN`, `MODERATOR` ou `ANALYST` |
+
+A API identifica o token pelo emissor (`iss`). O do Firebase é validado com as chaves públicas do Google para o projeto em `FIREBASE_PROJECT_ID`. O do admin é conferido com o `ADMIN_JWT_SECRET` (HS256), que tem que ser **o mesmo do Venus-CRUD**. A Classificação só confere o token do admin: quem emite é o login do Venus-CRUD.
+
+**Regra por rota**
+
+| Rotas | Quem pode |
+|---|---|
+| Swagger | livre |
+| `POST /api/classifications` | o dono do `userId`, com a conta ativa, ou `ADMIN` |
+| `POST /api/base-scores` e `POST /api/base-scores/product-version/{versionId}` | só `ADMIN` |
+
+"Dono" quer dizer que o usuário do token do Firebase é o mesmo `userId` do corpo, com a conta `ACTIVE` ou `PENDING`. A checagem fica no `OwnershipGuard`, chamado pelo `@PreAuthorize` da rota. O admin com papel `ADMIN` passa por essa checagem; `MODERATOR` e `ANALYST` recebem 403.
+
+## Como rodar
+
+### Pré-requisitos
+
+- JDK 21
+- Acesso a um PostgreSQL com o schema `venus` criado pelo repositório **Venus-Banco**
+- Acesso ao Redis do time, para o cache. Se ele estiver fora do ar, a API continua respondendo pelo banco, só sem cache
+- Docker, opcional: para o `docker-compose` e para a imagem da API
+
+### 1. Clonar
+
+```bash
+git clone https://github.com/Venus-System/Venus-Classificacao.git
+cd Venus-Classificacao
+git checkout develop
+```
+
+### 2. Configurar as variáveis de ambiente
+
+```bash
+cp .env.example .env
+```
+
+Preencha o `.env`. O Spring **não lê o `.env` sozinho**: carregue as variáveis no terminal ou na configuração de execução da IDE (no IntelliJ, pelo plugin EnvFile ou em *Run Configuration → Environment variables*).
+
+| Variável | Descrição |
+|---|---|
+| `SERVER_PORT` | Porta HTTP da API (padrão `8080`) |
+| `DB_HOST`, `DB_PORT`, `DB_NAME` | Endereço do PostgreSQL |
+| `DB_USERNAME`, `DB_PASSWORD` | Usuário e senha do PostgreSQL |
+| `REDIS_HOST`, `REDIS_PORT` | Endereço do Redis do cache |
+| `REDIS_USERNAME`, `REDIS_PASSWORD` | Usuário e senha do Redis |
+| `ADMIN_JWT_SECRET` | Segredo do token do admin. Tem que ser **o mesmo do Venus-CRUD** e ter **no mínimo 32 bytes**, senão a API não sobe |
+| `FIREBASE_PROJECT_ID` | Projeto do Firebase que emite o token do app |
+| `SCORING_BASE_MODEL_ID` | Id do modelo de score base. Quando o modelo pedido não tem regra para um efeito, vale a regra do modelo base |
+
+Para as credenciais do banco e do Redis e o segredo do admin, fale com o time.
+
+### 3. Banco de dados
+
+O Hibernate roda com `ddl-auto: validate`: ele **confere** se as tabelas batem com as entities, mas **não cria nem altera nada**. Se faltar uma tabela ou coluna, a API não sobe.
+
+O schema vem do repositório **Venus-Banco**. Toda mudança de tabela, coluna, trigger ou permissão é feita lá, pelo time de banco, e só depois a API muda. O usuário de `DB_USERNAME` precisa poder gravar em `analysis_results`, `personalized_scores`, `rule_evaluations` e `product_scores`.
+
+A API abre no máximo 3 conexões com o banco, como o Venus-CRUD, para não esgotar as vagas do servidor, que são divididas entre as APIs.
+
+> **Limitação conhecida:** a URL do datasource no `application.yml` usa `sslmode=require`. O Postgres do `docker-compose.yml` sobe sem SSL, então a API não conecta nele sem ajuste. Hoje o jeito que funciona é apontar para o banco compartilhado do time.
+
+### 4. Subir a API
+
+```bash
+./mvnw spring-boot:run
+```
+
+No Windows (PowerShell ou cmd), use `mvnw.cmd spring-boot:run`.
+
+A API sobe em `http://localhost:8080` (ou na porta de `SERVER_PORT`).
+
+### Com Docker
+
+```bash
+docker build -t venus-classificacao .
+docker run --env-file .env -p 8080:8080 venus-classificacao
+```
+
+A imagem é feita em duas etapas: compila com JDK 21 e roda com JRE 21 Alpine, com um usuário sem privilégios.
+
+## Documentação da API (Swagger)
+
+Com a API no ar:
+
+- **Swagger UI:** `http://localhost:8080/swagger-ui.html`
+- **OpenAPI (JSON):** `http://localhost:8080/v3/api-docs`
+
+Para testar a rota no Swagger:
+
+1. Pegue um token: o do Firebase no app, ou o do admin chamando `POST /api/auth/admin/login` no Venus-CRUD.
+2. Clique em **Authorize** e cole o token.
+3. A rota passa a enviar o cabeçalho `Authorization`.
+
+A rota mostra no Swagger os erros possíveis (400, 401, 403, 404, 422…).
+
+## Rotas
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `POST /api/classifications` | dono ou `ADMIN` | Calcula, grava e devolve a nota do produto para o perfil do usuário |
+| `GET /api/classifications/user/{userId}/product-version/{versionId}` | dono ou `ADMIN` | Devolve a última análise salva daquela versão |
+| `GET /api/classifications/user/{userId}/product/{productId}` | dono ou `ADMIN` | Acha a versão atual do produto e devolve a última análise salva dela |
+| `POST /api/base-scores/product-version/{versionId}` | `ADMIN` | Calcula, grava e devolve a nota base de uma versão |
+| `POST /api/base-scores` | `ADMIN` | Calcula e grava a nota base da versão atual de todos os produtos e devolve um resumo |
+
+Corpo:
+
+```json
+{
+  "userId": 42,
+  "productVersionId": 118,
+  "scoringModelId": 1
+}
+```
+
+O `scoringModelId` é opcional: sem ele, a API usa o modelo ativo de maior id.
+
+A resposta traz a nota final, a faixa (`recommendationLevel`), o risco (`riskLevel`), a compatibilidade com o perfil, quantos ingredientes a versão tem e quantos ainda não foram avaliados, o detalhamento das notas (`breakdown`), os motivos (`reasons`, com bloqueio e alergia sempre primeiro) e um resumo em texto (`summary`).
+
+Nos dois `GET` o `scoringModelId` também é opcional. O 404 com `code` `ANALYSIS_NOT_FOUND` quer dizer que a pessoa
+ainda não analisou aquela versão com aquele modelo: o app mostra a nota genérica do produto ou chama o `POST`. O `GET`
+por produto olha só a versão atual, então uma análise de versão antiga não volta.
+
+O `GET` devolve o que fica gravado: a nota, a faixa, o risco, a compatibilidade, as quatro notas, os motivos de regra
+e o resumo. Os campos que só existem na hora do cálculo (`qualityScore`, `qualityPoints`, `profilePoints`,
+`ingredientCount` e `unevaluatedIngredientCount`) vêm nulos.
+
+Cada usuário tem um score pessoal por versão e modelo: o `POST` seguinte atualiza esse score e guarda a análise nova
+no histórico.
+
+**Nota base.** As duas rotas não têm corpo, e o `scoringModelId` vai opcional na query. As duas respondem 200, porque
+a nota da versão é atualizada quando já existe.
+
+- Por versão: o painel chama no **fim** do cadastro do produto, depois dos ingredientes e da embalagem. Antes dos
+  ingredientes volta 422 `NO_INGREDIENTS`; antes da embalagem, o ambiental sai sem ela. Vale também para uma versão
+  que ainda não é a atual. A resposta traz a nota base, as quatro notas e quantos ingredientes ainda não têm
+  avaliação, que é o que explica uma nota nula.
+- Todos: passa pela versão atual de cada produto. Versão em revisão ou sem ingrediente é pulada e aparece em
+  `skipped`, com o `code`. A resposta traz só o resumo (total, quantas foram gravadas, as puladas e o tempo). Com o
+  catálogo grande o request demora; se cair no meio, o que já foi gravado fica e é só chamar de novo.
+
+## Testes
+
+```bash
+./mvnw verify
+```
+
+Precisa do Docker aberto: o teste de integração sobe um Postgres 16 com o `00_schema.sql` do Venus-Banco e uma seed
+pequena (`src/test/resources/venus-banco/`), e um Redis 7.4 para o cache. Sem Docker, ele é pulado.
+
+| Tipo | Onde | O que cobre |
+|---|---|---|
+| Unitário | `service/**` | as quatro notas, os pesos, as perguntas, as travas, a cascata de regras e os motivos |
+| Segurança | `ClassificationControllerSecurityTest`, `BaseScoreControllerSecurityTest`, `OwnershipGuardTest`, `PreAuthorizeCoverageTest` | 401, 403, o admin e o `@PreAuthorize` em toda rota |
+| Integração | `ClassificationApiIntegrationTest` | o `POST` gravando, o segundo `POST` igual, os dois `GET`, os 404 e 422 e o cache dos `GET` no Redis |
+| Integração | `ClassificationRedisDownIntegrationTest` | o `POST` e o `GET` respondendo pelo banco com o Redis fora do ar |
+| Integração | `BaseScoreApiIntegrationTest` | a nota base por versão e de todos gravando em `product_scores`, as versões puladas, os 404 e 422 e o Swagger das duas rotas |
+
+O `01_users_email_password_hash.sql` do teste cobre duas colunas que já estão no banco e ainda não estão no `00_schema.sql` do Venus-Banco. Quando o Venus-Banco mudar o schema, copiar o `sql/00_schema.sql` de lá por cima do arquivo do teste e apagar o `01` se as colunas já estiverem nele.
+
+## CI/CD
+
+| Workflow | Quando roda | O que faz |
+|---|---|---|
+| `ci.yml` | PR para `develop` ou `main` | `./mvnw verify` e ShellCheck dos scripts de deploy |
+| `deploy-qa.yml` | push em `develop` | Build, testes e publicação das imagens `staging` e `develop-<sha>` no GHCR |
+| `deploy-prod.yml` | push em `main` | Build, testes e imagem no GHCR com as tags `latest` e `main-<sha>` |
+
+No QA, o build e os testes rodam no `ubuntu-latest` do GitHub e publicam a imagem privada `staging` no GHCR. A EC2 não tem runner do GitHub: um timer do `systemd` verifica o digest do GHCR a cada minuto, chama o helper root-owned, troca o container pela imagem nova, faz o health check em `http://127.0.0.1:8081/swagger-ui.html` e volta para a imagem anterior se der erro. Uma imagem que falhou fica registrada em `/var/lib/venus-classificacao/failed-image` e não entra novamente até aparecer outro digest. Nenhum PR consegue executar comandos na EC2; o `.env` e o token do GHCR ficam somente na máquina.
+
+### Instalação do deploy na EC2
+
+A instalação precisa ser feita como `root` na mesma máquina do Venus-CRUD, que já possui Docker. A unit `venus-classificacao.service` fica em `deploy/` e mantém o contrato abaixo: container `venus-classificacao`, `--env-file /etc/venus-classificacao.env`, mapeamento `-p 127.0.0.1:8081:8080` e a imagem como último argumento do `docker run`. A porta fica só na máquina: quem fala com ela é o Nginx.
+
+```ini
+[Service]
+ExecStart=/usr/bin/docker run --name venus-classificacao --env-file /etc/venus-classificacao.env -p 127.0.0.1:8081:8080 venus-classificacao:current
+```
+
+Crie o `.env` da máquina com as variáveis do `.env.example`, com `SERVER_PORT=8080` e o mesmo `ADMIN_JWT_SECRET` do Venus-CRUD:
+
+```bash
+sudo install -o root -g root -m 0600 /dev/null /etc/venus-classificacao.env
+sudoedit /etc/venus-classificacao.env
+```
+
+Instale os scripts e as units:
+
+```bash
+sudo install -o root -g root -m 0755 deploy/venus-classificacao-deploy.sh /usr/local/sbin/venus-classificacao-deploy
+sudo install -o root -g root -m 0755 deploy/venus-classificacao-poll.sh /usr/local/sbin/venus-classificacao-poll
+sudo install -o root -g root -m 0644 deploy/venus-classificacao.service /etc/systemd/system/venus-classificacao.service
+sudo install -o root -g root -m 0644 deploy/venus-classificacao-poll.service /etc/systemd/system/venus-classificacao-poll.service
+sudo install -o root -g root -m 0644 deploy/venus-classificacao-poll.timer /etc/systemd/system/venus-classificacao-poll.timer
+sudo install -d -o root -g root -m 0755 /var/lib/venus-classificacao
+```
+
+Crie o token clássico do GitHub com apenas `read:packages`, coloque-o no arquivo local e não o envie para o repositório. O mesmo token do Venus-CRUD serve:
+
+```bash
+sudo install -o root -g root -m 0600 /dev/null /etc/venus-classificacao-ghcr.token
+sudoedit /etc/venus-classificacao-ghcr.token
+sudo chmod 600 /etc/venus-classificacao-ghcr.token
+```
+
+Depois habilite a unit e o polling:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable venus-classificacao.service
+sudo systemctl enable --now venus-classificacao-poll.timer
+sudo systemctl status venus-classificacao-poll.timer
+```
+
+O helper puxa a imagem remota fixa `ghcr.io/venus-system/venus-classificacao:staging`, mas a unit roda somente a tag local `venus-classificacao:current`. Durante a troca ele guarda `venus-classificacao:previous`, faz rollback sem esperar o health check quando recebe cancelamento e remove imagens antigas sem tag após um deploy bem-sucedido.
+
+### Nginx
+
+O Nginx recebe `https://venus-classificacao.duckdns.org` e manda para `127.0.0.1:8081`. A aplicação lê o protocolo que ele envia (`server.forward-headers-strategy: framework`), por isso o Swagger monta os links com `https://`:
+
+```bash
+sudo install -o root -g root -m 0644 deploy/nginx/venus-classificacao.conf /etc/nginx/conf.d/venus-classificacao.conf
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d venus-classificacao.duckdns.org --redirect
+```
+
+## Como contribuir
+
+1. Crie o branch a partir de `develop`: `feat/...`, `fix/...`, `refactor/...`, `docs/...` ou `ci/...`.
+2. Commits no padrão de commits convencionais, em português e no gerúndio. Exemplo: `feat: adicionando o POST /api/classifications`.
+3. Rode `./mvnw verify` antes de abrir o PR.
+4. Abra o PR para `develop` e preencha o template (`.github/pull_request_template.md`).
+5. Mudança de banco não é feita aqui: abra no **Venus-Banco** e descreva no PR o que a API passa a esperar.
+
+Padrões do código:
+
+- A resposta da API é sempre DTO `record`, nunca entity.
+- A conversão é feita com MapStruct: não monte DTO na mão no service.
+- Toda rota nova precisa de `@PreAuthorize`.
+- Classe nova do motor entra no pacote da etapa dela, e pergunta nova do perfil é uma classe que implementa `ProfileQuestionStrategy`.
+- Nada de chave, senha ou URL privada no código ou no `application.yml`: tudo vem do `.env`.
+
+## Licença
+
+Distribuído sob a licença MIT. Veja [LICENSE](LICENSE).

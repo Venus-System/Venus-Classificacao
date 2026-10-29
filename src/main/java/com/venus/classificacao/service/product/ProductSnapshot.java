@@ -1,0 +1,105 @@
+package com.venus.classificacao.service.product;
+
+import com.venus.classificacao.entity.enums.EffectType;
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+public record ProductSnapshot(
+        Long productVersionId,
+        BrandClaims brandClaims,
+        List<IngredientData> ingredients,
+        Optional<PackagingData> packaging,
+        int verifiedEthicalSealCount,
+        Map<Long, Integer> benefitCountByIngredientId,
+        Set<Long> ingredientIdsWithEffect,
+        List<RuleData> rules
+) {
+
+    public ProductSnapshot {
+        ingredients = List.copyOf(ingredients);
+        benefitCountByIngredientId = Map.copyOf(benefitCountByIngredientId);
+        ingredientIdsWithEffect = Set.copyOf(ingredientIdsWithEffect);
+        rules = List.copyOf(rules);
+    }
+
+    public List<IngredientData> evaluatedIngredients() {
+        return ingredients.stream()
+                .filter(IngredientData::evaluated)
+                .toList();
+    }
+
+    public List<IngredientData> evaluatedIngredientsWithEffect() {
+        return evaluatedIngredients().stream()
+                .filter(ingredient -> ingredientIdsWithEffect.contains(ingredient.id()))
+                .toList();
+    }
+
+    public int unevaluatedIngredientCount() {
+        return ingredients.size() - evaluatedIngredients().size();
+    }
+
+    public Optional<PackagingData> evaluatedPackaging() {
+        return packaging.filter(PackagingData::evaluated);
+    }
+
+    public int benefitCountOf(Long ingredientId) {
+        return benefitCountByIngredientId.getOrDefault(ingredientId, 0);
+    }
+
+    public List<RuleData> rulesFor(Set<Long> profileTagIds) {
+        return rules.stream()
+                .filter(rule -> profileTagIds.contains(rule.profileTagId()))
+                .toList();
+    }
+
+    public record BrandClaims(ClaimStatus vegan, ClaimStatus crueltyFree) {
+    }
+
+    public enum ClaimStatus {
+        DECLARED,
+        NOT_DECLARED,
+        UNKNOWN
+    }
+
+    public record IngredientData(
+            Long id,
+            String name,
+            int irritationRisk,
+            int comedogenicity,
+            int biodegradability,
+            int environmentalRisk,
+            boolean evaluated
+    ) {
+
+        public static final int MIN_NOTE = 0;
+        public static final int MAX_NOTE = 10;
+    }
+
+    public record PackagingData(
+            boolean recyclable,
+            boolean refillable,
+            boolean biodegradable,
+            BigDecimal recycledContentPercentage,
+            boolean evaluated
+    ) {
+    }
+
+    public record RuleData(
+            Long ruleId,
+            Long ingredientId,
+            String ingredientName,
+            String categoryName,
+            Long profileTagId,
+            String profileTagSlug,
+            String profileTagName,
+            EffectType effectType,
+            String effectName,
+            int scoreDelta,
+            BigDecimal weight,
+            String reason
+    ) {
+    }
+}
