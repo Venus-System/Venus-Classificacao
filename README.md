@@ -11,6 +11,7 @@ A Classificação não é dona de nenhum dado. Ela lê o catálogo e o perfil do
 - [O que a API faz](#o-que-a-api-faz)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Como uma requisição passa pelo código](#como-uma-requisição-passa-pelo-código)
+- [Padrão de projeto: Strategy](#padrão-de-projeto-strategy)
 - [Segurança](#segurança)
 - [Como rodar](#como-rodar)
 - [Documentação da API (Swagger)](#documentação-da-api-swagger)
@@ -135,7 +136,7 @@ Venus-Classificacao/
 │       └── resources/
 │           └── application.yml    # Toda configuração vem de variável de ambiente
 ├── .env.example                   # Modelo das variáveis de ambiente
-├── docker-compose.yml             # Postgres local
+├── docker-compose.yml             # API, Postgres e Redis locais
 ├── Dockerfile                     # Imagem da API (build em duas etapas)
 └── pom.xml
 ```
@@ -171,6 +172,17 @@ POST /api/classifications
   "details": []
 }
 ```
+
+## Padrão de projeto: Strategy
+
+O motor usa o padrão **Strategy** em dois lugares, para que cada conta fique numa classe só e uma conta nova entre sem mexer nas outras:
+
+| Interface | Implementações | Quem usa | O que cada uma faz |
+|---|---|---|---|
+| `ProfileQuestionStrategy` (`service/question/`) | 15, uma por pergunta do perfil: tipo de pele, couro cabeludo, acne, rosácea, eczema, hiperpigmentação, melasma, gravidez, amamentação e as preferências (vegano, cruelty-free, sem parabenos, sem sulfato, sem silicone e as outras) | `PersonalizedScoreCalculator` | Diz quais etiquetas a resposta liga (`activeTagIds`) e quantos pontos a pergunta dá para o produto (`score`) |
+| `BucketScoreStrategy` (`service/quality/strategy/`) | 4, uma por nota de qualidade: saúde, ambiental, ética e desempenho | `QualityScoreCalculator` | Calcula a nota de 0 a 100 daquela parte |
+
+O Spring entrega todas as implementações como uma `List` no construtor de quem usa, e o calculador só percorre a lista. Para criar uma pergunta nova, basta uma classe nova com `@Component` que implementa a interface; nenhuma outra classe muda. Cada implementação implementa a interface direto, sem classe pai, e mostra os passos dela no próprio método. A conta que se repete entre elas fica num método com nome, como o `QuestionScore.fromRules`.
 
 ## Segurança
 
@@ -223,10 +235,12 @@ Preencha o `.env`. O Spring **não lê o `.env` sozinho**: carregue as variávei
 | `SERVER_PORT` | Porta HTTP da API (padrão `8080`) |
 | `DB_HOST`, `DB_PORT`, `DB_NAME` | Endereço do PostgreSQL |
 | `DB_USERNAME`, `DB_PASSWORD` | Usuário e senha do PostgreSQL |
+| `DB_SSLMODE` | SSL da conexão com o PostgreSQL (padrão `require`; o `docker-compose.yml` usa `disable` no Postgres local) |
 | `REDIS_HOST`, `REDIS_PORT` | Endereço do Redis do cache |
 | `REDIS_USERNAME`, `REDIS_PASSWORD` | Usuário e senha do Redis |
 | `ADMIN_JWT_SECRET` | Segredo do token do admin. Tem que ser **o mesmo do Venus-CRUD** e ter **no mínimo 32 bytes**, senão a API não sobe |
 | `FIREBASE_PROJECT_ID` | Projeto do Firebase que emite o token do app |
+| `CORS_ALLOWED_ORIGINS` | Origens da web que podem chamar a API pelo navegador, separadas por vírgula (ex.: `https://venus-web-application.vercel.app`). Vazio libera qualquer origem. O app mobile não passa por CORS |
 | `SCORING_BASE_MODEL_ID` | Id do modelo de score base. Quando o modelo pedido não tem regra para um efeito, vale a regra do modelo base |
 
 Para as credenciais do banco e do Redis e o segredo do admin, fale com o time.
@@ -238,8 +252,6 @@ O Hibernate roda com `ddl-auto: validate`: ele **confere** se as tabelas batem c
 O schema vem do repositório **Venus-Banco**. Toda mudança de tabela, coluna, trigger ou permissão é feita lá, pelo time de banco, e só depois a API muda. O usuário de `DB_USERNAME` precisa poder gravar em `analysis_results`, `personalized_scores`, `rule_evaluations` e `product_scores`.
 
 A API abre no máximo 3 conexões com o banco, como o Venus-CRUD, para não esgotar as vagas do servidor, que são divididas entre as APIs.
-
-> **Limitação conhecida:** a URL do datasource no `application.yml` usa `sslmode=require`. O Postgres do `docker-compose.yml` sobe sem SSL, então a API não conecta nele sem ajuste. Hoje o jeito que funciona é apontar para o banco compartilhado do time.
 
 ### 4. Subir a API
 
@@ -259,6 +271,25 @@ docker run --env-file .env -p 8080:8080 venus-classificacao
 ```
 
 A imagem é feita em duas etapas: compila com JDK 21 e roda com JRE 21 Alpine, com um usuário sem privilégios.
+
+### Tudo com Docker Compose
+
+O `docker-compose.yml` sobe a API junto com um PostgreSQL 16 e um Redis 7 locais, sem precisar dos bancos do time:
+
+```bash
+docker compose up -d --build
+```
+
+- **PostgreSQL:** na primeira vez, cria o schema `venus` e a seed pequena dos testes com os arquivos de `src/test/resources/venus-banco/` (um modelo de score, produtos, ingredientes e regras). Por isso o compose usa `SCORING_BASE_MODEL_ID=1`, o modelo da seed.
+- **API:** só sobe depois que o Postgres e o Redis respondem ao health check. Ela usa o `.env` para o resto (Firebase, token do admin), mas o compose troca o endereço do banco e do Redis pelos containers e usa `DB_SSLMODE=disable`.
+- **Portas:** a API fica em `SERVER_PORT`, o Postgres em `DB_PORT` e o Redis em `6379`.
+
+O schema só é criado quando o volume do Postgres está vazio. Depois que a cópia do schema mudar, recrie o volume:
+
+```bash
+docker compose down -v
+docker compose up -d --build
+```
 
 ## Documentação da API (Swagger)
 
@@ -326,6 +357,13 @@ a nota da versão é atualizada quando já existe.
 ```bash
 ./mvnw verify
 ```
+
+**Como escrevemos os testes**
+
+- **Um comportamento por teste, em três passos:** monta o cenário, chama o código e confere o resultado (o padrão *Arrange, Act, Assert*). O nome diz o resultado esperado em inglês simples, como `pregnancyBlockStopsProduct`.
+- **Teste antes da correção:** quando corrigimos um defeito, o teste que reproduz o defeito vem primeiro e tem que falhar no código antigo.
+- **Cada camada com a ferramenta dela:** as contas do motor (notas, perguntas, travas, motivos) com JUnit 5 puro, sem Spring e sem banco, montando o perfil e o produto na mão; rotas com `@WebMvcTest` e token falso, para conferir 401 e 403; a API inteira com Testcontainers, num Postgres e num Redis de verdade.
+- **Teste que vigia o projeto:** o `PreAuthorizeCoverageTest` quebra o build se alguém criar uma rota sem `@PreAuthorize`.
 
 Precisa do Docker aberto: o teste de integração sobe um Postgres 16 com o `00_schema.sql` do Venus-Banco e uma seed
 pequena (`src/test/resources/venus-banco/`), e um Redis 7.4 para o cache. Sem Docker, ele é pulado.
