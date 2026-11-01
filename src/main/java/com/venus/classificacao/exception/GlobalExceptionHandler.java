@@ -84,7 +84,7 @@ public class GlobalExceptionHandler {
         List<String> details = ex.getBindingResult().getFieldErrors().stream()
                 .map(fieldError -> fieldError.getField() + ": " + fieldError.getDefaultMessage())
                 .toList();
-        return build(HttpStatus.BAD_REQUEST, "Validation failed", request, details);
+        return build(HttpStatus.BAD_REQUEST, "Falha na validacao dos campos", request, details);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
