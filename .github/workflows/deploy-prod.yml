@@ -1,4 +1,4 @@
-name: Deploy Production
+name: Publish Production Image
 
 
 on:
@@ -16,8 +16,6 @@ jobs:
   build-and-push:
     name: Build, test e publicar imagem
     runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,14 +53,3 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-  deploy:
-    name: Deploy para Producao
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Deploy pendente de host
-        run: |
-          echo "Imagem publicada: ${{ needs.build-and-push.outputs.image }}"
-          echo "Host de PROD ainda nao definido - nenhum deploy executado."
